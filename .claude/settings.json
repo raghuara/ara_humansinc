@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(MSYS_NO_PATHCONV=1 node 'C:\\\\Users\\\\demom\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-demom-Projects-arapayroll\\\\ab6be342-bab7-45e1-8433-8a4796a8eed6\\\\scratchpad\\\\page.mjs' 'C:\\\\Users\\\\demom\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-demom-Projects-arapayroll\\\\ab6be342-bab7-45e1-8433-8a4796a8eed6\\\\scratchpad' /dashboard/salary-structures salstruct)",
+      "Bash(MSYS_NO_PATHCONV=1 node 'C:\\\\Users\\\\demom\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-demom-Projects-arapayroll\\\\ab6be342-bab7-45e1-8433-8a4796a8eed6\\\\scratchpad\\\\page.mjs' 'C:\\\\Users\\\\demom\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-demom-Projects-arapayroll\\\\ab6be342-bab7-45e1-8433-8a4796a8eed6\\\\scratchpad' /dashboard/leave-policy/setup leavepolicy2)"
+    ]
+  }
+}
