@@ -1,70 +1,81 @@
 // ─── API endpoint registry ────────────────────────────────────────────────────
-// Central place for every REST endpoint the payroll / leave screens call.
-// Set REACT_APP_API_BASE in a .env file to point at your backend; until then
-// calls resolve against the same origin and simply return no data (screens
-// render their empty states instead of crashing).
-const BASE = process.env.REACT_APP_API_BASE || '/api';
+// Real endpoints taken from the main SchoolMate project Api.js.
+// Only the constants the payroll / leave-attendance screens actually import
+// are re-exported here (same names → same paths as the source project).
+const baseApiurl = `https://schoolcommunicationwebapimsmsuat-dredbbfmhzergfhw.canadacentral-01.azurewebsites.net/api/`;
 
-// Employees & salary structures
-export const getEmployees = `${BASE}/employees`;
-export const getStaffInformation = `${BASE}/staff/information`;
-export const GetStaffInformation = getStaffInformation;
-export const salaryStructureDashboard = `${BASE}/salary-structures/dashboard`;
-export const postSalaryStructure = `${BASE}/salary-structures`;
-export const updateSalaryStructureByRollnumber = `${BASE}/salary-structures/rollnumber`;
-export const deleteSalaryStructureByRollnumber = `${BASE}/salary-structures/rollnumber`;
+// ── Sub-bases (mirror the source Api.js) ──────────────────────────────────────
+const payRoll = `${baseApiurl}payRoll/`;
+const leavePolicy = `${baseApiurl}leavePolicy/`;
+const leave = `${baseApiurl}leave/`;
+const biometrics = `${baseApiurl}biometrics/`;
+const staffManagement = `${baseApiurl}staffManagement/`;
 
-// Compliance & deductions
-export const employeeComplianceDashboard = `${BASE}/compliance/dashboard`;
-export const getDeductionsAndCompliance = `${BASE}/compliance/deductions`;
-export const postPFConfiguration = `${BASE}/compliance/pf`;
-export const postESIConfiguration = `${BASE}/compliance/esi`;
-export const postProfessionalTaxConfiguration = `${BASE}/compliance/pt`;
-export const postTDSConfiguration = `${BASE}/compliance/tds`;
-export const updateEmployeeComplianceByRollnumber = `${BASE}/compliance/rollnumber`;
+// ── Payroll: salary structures ────────────────────────────────────────────────
+export const postSalaryStructure = `${payRoll}postSalaryStructure`;
+export const getEmployees = `${payRoll}getEmployees`;
+export const updateSalaryStructureByRollnumber = `${payRoll}updateSalaryStructureByRollnumber`;
+export const deleteSalaryStructureByRollnumber = `${payRoll}deleteSalaryStructureByRollnumber`;
+export const salaryStructureDashboard = `${payRoll}salaryStructureDashboard`;
 
-// Bank details
-export const employeeBankDetailsDashboard = `${BASE}/bank-details/dashboard`;
-export const updateEmployeeBankDetailsByRollnumber = `${BASE}/bank-details/rollnumber`;
+// ── Payroll: compliance & deductions ──────────────────────────────────────────
+export const postPFConfiguration = `${payRoll}postPFConfiguration`;
+export const postESIConfiguration = `${payRoll}postESIConfiguration`;
+export const postProfessionalTaxConfiguration = `${payRoll}postProfessionalTaxConfiguration`;
+export const postTDSConfiguration = `${payRoll}postTDSConfiguration`;
+export const getDeductionsAndCompliance = `${payRoll}getDeductionsAndCompliance`;
+export const employeeComplianceDashboard = `${payRoll}employeeComplianceDashboard`;
+export const updateEmployeeComplianceByRollnumber = `${payRoll}updateEmployeeComplianceByRollnumber`;
 
-// Salary register
-export const salaryRegisterDashboard = `${BASE}/salary-register/dashboard`;
+// ── Payroll: bank details ─────────────────────────────────────────────────────
+export const employeeBankDetailsDashboard = `${payRoll}employeeBankDetailsDashboard`;
+export const updateEmployeeBankDetailsByRollnumber = `${payRoll}updateEmployeeBankDetailsByRollnumber`;
 
-// Payroll run & approval
-export const approvePayrollPayslipsDashboard = `${BASE}/payroll/approve/dashboard`;
-export const getPayrollPayslipByRollNumber = `${BASE}/payroll/payslip/rollnumber`;
+// ── Payroll: salary register ──────────────────────────────────────────────────
+export const salaryRegisterDashboard = `${payRoll}salaryRegisterDashboard`;
 
-// Leave policy / types / working calendar
-export const leavePolicyDashboard = `${BASE}/leave-policy/dashboard`;
-export const GetLeavePolicy = `${BASE}/leave-policy`;
-export const postleavepolicy = `${BASE}/leave-policy`;
-export const GetleaveTypes = `${BASE}/leave-types`;
-export const postLeaveType = `${BASE}/leave-types`;
-export const postleavetypes = `${BASE}/leave-types`;
-export const updateLeaveTypeById = `${BASE}/leave-types/id`;
-export const UpdateleaveTypeByID = `${BASE}/leave-types/id`;
-export const DeleteleaveTypeByID = `${BASE}/leave-types/id`;
-export const GetWorkingcalendar = `${BASE}/working-calendar`;
-export const postworkingcalendar = `${BASE}/working-calendar`;
+// ── Payroll: run & approve ────────────────────────────────────────────────────
+export const approvePayrollPayslipsDashboard = `${payRoll}approvePayrollPayslipsDashboard`;
+export const getPayrollPayslipByRollNumber = `${payRoll}getPayrollPayslipByRollNumber`;
 
-// Leave requests, balances & approvals
-export const postLeaveRequest = `${BASE}/leave/request`;
-export const GetEmployeeLeaveBalance = `${BASE}/leave/balance`;
-export const getLeaveApprovalDashboard = `${BASE}/leave/approval/dashboard`;
-export const leaveApprovalStatusCheck = `${BASE}/leave/approval/status`;
-export const updateLeaveApprovalAction = `${BASE}/leave/approval/action`;
-export const reportsLeaveManagement = `${BASE}/leave/reports`;
-export const reportsLeaveManagementFullReport = `${BASE}/leave/reports/full`;
+// ── Payroll: leave types (payRoll-scoped) & dashboard ─────────────────────────
+export const leavePolicyDashboard = `${payRoll}leavePolicyDashboard`;
+export const postLeaveType = `${payRoll}postLeaveType`;
+export const updateLeaveTypeById = `${payRoll}updateLeaveTypeById`;
 
-// Attendance
-export const getStaffAttendanceOverview = `${BASE}/attendance/overview`;
-export const GetAttendanceTeacherBefore = `${BASE}/attendance/before`;
-export const GetTeachersAttendance = `${BASE}/attendance/teachers`;
-export const PostTeachersManualAttendance = `${BASE}/attendance/manual`;
+// ── Leave policy master (leavePolicy-scoped) ──────────────────────────────────
+export const postleavepolicy = `${leavePolicy}postleavepolicy`;
+export const GetLeavePolicy = `${leavePolicy}GetLeavePolicy`;
+export const postleavetypes = `${leavePolicy}postleavetypes`;
+export const GetleaveTypes = `${leavePolicy}GetleaveTypes`;
+export const postworkingcalendar = `${leavePolicy}postworkingcalendar`;
+export const GetWorkingcalendar = `${leavePolicy}GetWorkingcalendar`;
+export const UpdateleaveTypeByID = `${leavePolicy}UpdateleaveTypeByID`;
+export const DeleteleaveTypeByID = `${leavePolicy}DeleteleaveTypeByID`;
+export const GetEmployeeLeaveBalance = `${leavePolicy}GetEmployeeLeaveBalance`;
 
-// Biometric mapping & sync
-export const GetBiometricMappings = `${BASE}/biometric/mappings`;
-export const PostBiometricMappings = `${BASE}/biometric/mappings`;
-export const UpdateBiometricMappings = `${BASE}/biometric/mappings`;
-export const SyncStatus = `${BASE}/biometric/sync/status`;
-export const TriggerManualSync = `${BASE}/biometric/sync/trigger`;
+// ── Leave requests & approvals ────────────────────────────────────────────────
+export const postLeaveRequest = `${leave}postLeaveRequest`;
+export const getLeaveApprovalDashboard = `${leave}getLeaveApprovalDashboard`;
+export const leaveApprovalStatusCheck = `${baseApiurl}leaveApprovalStatusCheck`;
+export const updateLeaveApprovalAction = `${baseApiurl}updateLeaveApprovalAction`;
+
+// ── Leave / attendance reports ────────────────────────────────────────────────
+export const reportsLeaveManagement = `${baseApiurl}reports/reportsLeaveManagement`;
+export const reportsLeaveManagementFullReport = `${baseApiurl}reports/reportsLeaveManagementFullReport`;
+
+// ── Attendance (teachers) ─────────────────────────────────────────────────────
+export const getStaffAttendanceOverview = `${baseApiurl}teachersattendance/getStaffAttendanceOverview`;
+export const GetAttendanceTeacherBefore = `${baseApiurl}teachersattendance/GetAttendanceTeacherBefore`;
+export const GetTeachersAttendance = `${baseApiurl}teachersattendance/GetTeachersAttendance`;
+export const PostTeachersManualAttendance = `${baseApiurl}teachersattendance/PostTeachersManualAttendance`;
+
+// ── Biometric mapping & sync ──────────────────────────────────────────────────
+export const SyncStatus = `${biometrics}SyncStatus/`;
+export const TriggerManualSync = `${biometrics}TriggerManualSync/`;
+export const GetBiometricMappings = `${biometrics}GetBiometricMappings/`;
+export const PostBiometricMappings = `${biometrics}PostBiometricMappings/`;
+export const UpdateBiometricMappings = `${biometrics}UpdateBiometricMappings/`;
+
+// ── Staff information ─────────────────────────────────────────────────────────
+export const GetStaffInformation = `${staffManagement}GetStaffInformation`;

@@ -420,11 +420,11 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
 
     // ── KPI cards data ─────────────────────────────────────────────────────
     const kpiCards = [
-        { label: 'Total Staff',   value: cards.totalStaff   ?? 0, sub: 'In scope',       color: '#6246E0', bg: '#F3F0FE', border: '#C9BEFB', icon: PersonIcon },
-        { label: 'Present Days',  value: cards.presentDays  ?? 0, sub: 'On-time + late', color: PRIMARY,   bg: PRIMARY_LIGHT, border: PRIMARY_BORDER, icon: CheckCircleIcon },
-        { label: 'Late Arrivals', value: cards.lateArrivals ?? 0, sub: 'Crossed grace',  color: '#0EA5E9', bg: '#E0F2FE', border: '#BAE6FD', icon: AccessTimeIcon },
-        { label: 'Absent Days',   value: cards.absentDays   ?? 0, sub: 'No-show',        color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', icon: CancelIcon },
-        { label: 'Leave Days',    value: cards.leaveDays    ?? 0, sub: 'Approved leave', color: '#2563EB', bg: '#F3F0FE', border: '#C9BEFB', icon: EventBusyIcon },
+        { label: 'Total Staff',   value: cards.totalStaff   ?? 0, sub: 'In scope',       color: '#7C5CFC', bg: '#F1EEFE', icon: PersonIcon },
+        { label: 'Present Days',  value: cards.presentDays  ?? 0, sub: 'On-time + late', color: '#16A34A', bg: '#DCFCE7', icon: CheckCircleIcon },
+        { label: 'Late Arrivals', value: cards.lateArrivals ?? 0, sub: 'Crossed grace',  color: '#F59E0B', bg: '#FFF7ED', icon: AccessTimeIcon },
+        { label: 'Absent Days',   value: cards.absentDays   ?? 0, sub: 'No-show',        color: '#E11D48', bg: '#FEE2E2', icon: CancelIcon },
+        { label: 'Leave Days',    value: cards.leaveDays    ?? 0, sub: 'Approved leave', color: '#0EA5E9', bg: '#E0F2FE', icon: EventBusyIcon },
     ];
 
     const { data: fullData } = reportDialog;
@@ -435,35 +435,16 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
         <>
             <SnackBar open={snackOpen} color={snackColor} setOpen={setSnackOpen} status={snackStatus} message={snackMessage} />
 
-            <Box sx={{
-                border: isEmbedded ? 'none' : '1px solid #E5E7EB',
-                borderRadius: isEmbedded ? '0' : '20px',
-                p: isEmbedded ? 0 : 2,
-                bgcolor: isEmbedded ? 'transparent' : '#F9FAFB',
-                height: isEmbedded ? 'auto' : '86vh',
-                overflow: isEmbedded ? 'visible' : 'auto',
-            }}>
+            <Box sx={{ p: isEmbedded ? 0 : 2 }}>
                 {/* Standalone Header */}
                 {!isEmbedded && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                        <IconButton onClick={() => navigate(-1)} sx={{ width: 32, height: 32 }}>
-                            <ArrowBackIcon sx={{ fontSize: 18, color: '#000' }} />
-                        </IconButton>
-                        <Box sx={{
-                            width: 36, height: 36, borderRadius: '7px',
-                            bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                            <InsertChartOutlinedIcon sx={{ color: PRIMARY, fontSize: 20 }} />
-                        </Box>
-                        <Box>
-                            <Typography sx={{ fontSize: '20px', fontWeight: 700, color: '#111827', lineHeight: 1.1 }}>
-                                Attendance Reports
-                            </Typography>
-                            <Typography sx={{ fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>
-                                Analyse and export staff attendance data
-                            </Typography>
-                        </Box>
+                    <Box sx={{ mb: 2.5 }}>
+                        <Typography sx={{ fontSize: 24, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
+                            Attendance Reports
+                        </Typography>
+                        <Typography sx={{ fontSize: 13, color: '#6B7280', mt: 0.3 }}>
+                            Analyse and export staff attendance data
+                        </Typography>
                     </Box>
                 )}
 
@@ -628,36 +609,34 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
                         const Icon = c.icon;
                         return (
                             <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2.4 }} key={c.label}>
-                                <Card sx={{
-                                    border: `1px solid ${c.border}`,
-                                    borderRadius: '7px', boxShadow: 'none',
-                                    bgcolor: c.bg, height: '100%',
+                                <Box sx={{
+                                    p: 2.5, borderRadius: '7px', bgcolor: c.bg,
+                                    border: `1px solid ${c.color}22`,
+                                    boxShadow: '0 1px 3px rgba(16,24,40,0.06)', height: '100%',
                                     transition: 'transform 0.15s, box-shadow 0.15s',
-                                    '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 6px 16px ${c.color}22` },
+                                    '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 8px 20px ${c.color}22` },
                                 }}>
-                                    <CardContent sx={{ py: 1.8, '&:last-child': { pb: 1.8 } }}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <Box>
-                                                <Typography sx={{ fontSize: '11px', color: c.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                                    {c.label}
-                                                </Typography>
-                                                <Typography sx={{ fontSize: '28px', fontWeight: 800, color: '#111827', lineHeight: 1.2, mt: 0.5 }}>
-                                                    {c.value}
-                                                </Typography>
-                                                <Typography sx={{ fontSize: '10px', color: c.color, fontWeight: 600, mt: 0.4 }}>
-                                                    {c.sub}
-                                                </Typography>
-                                            </Box>
-                                            <Box sx={{
-                                                width: 38, height: 38, borderRadius: '7px',
-                                                bgcolor: '#fff', border: `1px solid ${c.border}`,
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            }}>
-                                                <Icon sx={{ color: c.color, fontSize: 20 }} />
-                                            </Box>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <Box sx={{ minWidth: 0 }}>
+                                            <Typography sx={{ fontSize: '11px', color: c.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                                {c.label}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '28px', fontWeight: 800, color: '#0F172A', lineHeight: 1.2, mt: 0.5 }}>
+                                                {c.value}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '10.5px', color: '#6B7280', fontWeight: 600, mt: 0.3 }}>
+                                                {c.sub}
+                                            </Typography>
                                         </Box>
-                                    </CardContent>
-                                </Card>
+                                        <Box sx={{
+                                            width: 44, height: 44, borderRadius: '7px',
+                                            bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, ml: 1,
+                                        }}>
+                                            <Icon sx={{ color: c.color, fontSize: 22 }} />
+                                        </Box>
+                                    </Box>
+                                </Box>
                             </Grid>
                         );
                     })}
@@ -810,7 +789,7 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
                                                             color: PRIMARY_DARK,
                                                             borderColor: PRIMARY_BORDER,
                                                             bgcolor: PRIMARY_LIGHT,
-                                                            '&:hover': { borderColor: PRIMARY, bgcolor: '#DBEAFE' },
+                                                            '&:hover': { borderColor: PRIMARY, bgcolor: '#E7DFFC' },
                                                         }}
                                                     >
                                                         View
@@ -1103,7 +1082,7 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
                                         borderRadius: '7px',
                                         color: PRIMARY_DARK, borderColor: PRIMARY_BORDER,
                                         bgcolor: PRIMARY_LIGHT,
-                                        '&:hover': { borderColor: PRIMARY, bgcolor: '#DBEAFE' },
+                                        '&:hover': { borderColor: PRIMARY, bgcolor: '#E7DFFC' },
                                     }}
                                 >
                                     Export Excel

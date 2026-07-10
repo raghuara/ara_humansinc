@@ -1320,30 +1320,21 @@ export default function AddStaffAttendancePage() {
 
     // ─── UI ──────────────────────────────────────────────────────────────────
     return (
-        <Box>
+        <Box sx={{ p: 2 }}>
             <SnackBar open={open} color={color} setOpen={setOpen} status={status} message={message} />
 
-            {/* Sub-header */}
+            {/* Header */}
             <Box sx={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                mb: 2, pb: 1.5, borderBottom: '1px solid #F3F4F6', flexWrap: 'wrap', gap: 1,
+                display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' },
+                mb: 2.5, flexWrap: 'wrap', gap: 1.5,
             }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
-                    <Box sx={{
-                        width: 38, height: 38, borderRadius: '7px',
-                        bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                        <PeopleIcon sx={{ color: PRIMARY, fontSize: 20 }} />
-                    </Box>
-                    <Box>
-                        <Typography sx={{ fontSize: '15px', fontWeight: 700, color: '#111827' }}>
-                            Mark Staff Attendance
-                        </Typography>
-                        <Typography sx={{ fontSize: '11px', color: '#6B7280' }}>
-                            Manual entry · {attendanceDate === today ? 'Today' : attendanceDate}
-                        </Typography>
-                    </Box>
+                <Box>
+                    <Typography sx={{ fontSize: 24, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
+                        Mark Staff Attendance
+                    </Typography>
+                    <Typography sx={{ fontSize: 13, color: '#6B7280', mt: 0.3 }}>
+                        Manual entry · {attendanceDate === today ? 'Today' : attendanceDate}
+                    </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Box sx={{
@@ -1414,40 +1405,39 @@ export default function AddStaffAttendancePage() {
             {/* Counters */}
             <Grid container spacing={1.5} sx={{ mb: 2 }}>
                 {[
-                    { label: 'Present',  count: counts.present, icon: CheckCircleIcon, ...STATUS_STYLE.Present },
-                    { label: 'Late',     count: counts.late,    icon: AccessTimeIcon,  ...STATUS_STYLE.Late },
-                    { label: 'Absent',   count: counts.absent,  icon: ClearAllIcon,    ...STATUS_STYLE.Absent },
-                    { label: 'On Leave', count: counts.onLeave, icon: EventIcon,       ...STATUS_STYLE['On Leave'] },
+                    { label: 'Present',  count: counts.present, icon: CheckCircleIcon, color: '#16A34A', bg: '#DCFCE7' },
+                    { label: 'Late',     count: counts.late,    icon: AccessTimeIcon,  color: '#F59E0B', bg: '#FFF7ED' },
+                    { label: 'Absent',   count: counts.absent,  icon: ClearAllIcon,    color: '#E11D48', bg: '#FEE2E2' },
+                    { label: 'On Leave', count: counts.onLeave, icon: EventIcon,       color: '#7C5CFC', bg: '#F1EEFE' },
                 ].map((item) => {
                     const Icon = item.icon;
                     return (
                         <Grid size={{ xs: 6, sm: 3 }} key={item.label}>
-                            <Card sx={{
-                                boxShadow: 'none', border: `1px solid ${item.border}`,
-                                borderRadius: '7px', bgcolor: item.bg,
+                            <Box sx={{
+                                p: 2.5, borderRadius: '7px', bgcolor: item.bg,
+                                border: `1px solid ${item.color}22`,
+                                boxShadow: '0 1px 3px rgba(16,24,40,0.06)', height: '100%',
                                 transition: 'transform 0.15s, box-shadow 0.15s',
-                                '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 6px 16px ${item.color}22` },
+                                '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 8px 20px ${item.color}22` },
                             }}>
-                                <CardContent sx={{ py: '14px !important', px: 2 }}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                        <Box>
-                                            <Typography sx={{ fontSize: '10px', color: item.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                                {item.label}
-                                            </Typography>
-                                            <Typography sx={{ fontSize: '24px', fontWeight: 800, color: '#111827', lineHeight: 1.2, mt: 0.3 }}>
-                                                {item.count}
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{
-                                            width: 32, height: 32, borderRadius: '7px',
-                                            bgcolor: '#fff', border: `1px solid ${item.border}`,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        }}>
-                                            <Icon sx={{ color: item.color, fontSize: 18 }} />
-                                        </Box>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <Box sx={{ minWidth: 0 }}>
+                                        <Typography sx={{ fontSize: '11px', color: item.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                            {item.label}
+                                        </Typography>
+                                        <Typography sx={{ fontSize: '28px', fontWeight: 800, color: '#0F172A', lineHeight: 1.2, mt: 0.5 }}>
+                                            {item.count}
+                                        </Typography>
                                     </Box>
-                                </CardContent>
-                            </Card>
+                                    <Box sx={{
+                                        width: 44, height: 44, borderRadius: '7px',
+                                        bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, ml: 1,
+                                    }}>
+                                        <Icon sx={{ color: item.color, fontSize: 22 }} />
+                                    </Box>
+                                </Box>
+                            </Box>
                         </Grid>
                     );
                 })}

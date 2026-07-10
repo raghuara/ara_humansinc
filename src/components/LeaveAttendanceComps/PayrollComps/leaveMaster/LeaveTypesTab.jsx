@@ -11,6 +11,10 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import PolicyIcon from '@mui/icons-material/Policy';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
+import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded';
+import AllInclusiveRoundedIcon from '@mui/icons-material/AllInclusiveRounded';
+import PaidRoundedIcon from '@mui/icons-material/PaidRounded';
 import axios from 'axios';
 import { GetleaveTypes, postleavetypes, UpdateleaveTypeByID, DeleteleaveTypeByID } from '../../../../Api/Api';
 import {
@@ -331,40 +335,50 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
             <Section icon={PolicyIcon} title="Leave Policy & Allocation" color={PRIMARY}
                 subtitle="Create each leave type with its own allocation period, accrual, end-of-period action, and deduction rule">
 
-                <Box sx={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    mb: 2, gap: 1.5, flexWrap: 'wrap',
-                }}>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                        {[
-                            { label: 'Total Types', value: policyStats.totalLeaveTypes, color: '#0891B2' },
-                            { label: 'Days / Month', value: `${policyStats.totalDaysPerMonth}d`, color: '#22C55E' },
-                            { label: 'On-Demand', value: policyStats.onDemandUnlimited, color: '#F97316' },
-                            { label: 'Encashable', value: policyStats.encashableLeaveTypes, color: '#E91E63' },
-                        ].map((s, i) => (
-                            <Box key={i} sx={{
-                                px: 1.5, py: 0.5, borderRadius: '20px',
-                                bgcolor: `${s.color}10`, border: `1px solid ${s.color}30`,
-                                display: 'flex', alignItems: 'center', gap: 0.7,
-                            }}>
-                                <Typography sx={{ fontSize: '11px', color: '#666', fontWeight: 500 }}>{s.label}:</Typography>
-                                <Typography sx={{ fontSize: '13px', fontWeight: 800, color: s.color }}>{s.value}</Typography>
-                            </Box>
-                        ))}
-                    </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
                         onClick={handleAddPolicy}
                         sx={{
-                            textTransform: 'none', bgcolor: PRIMARY, borderRadius: '30px',
-                            fontSize: '12px', fontWeight: 600, px: 2, height: 32,
-                            '&:hover': { bgcolor: PRIMARY_DARK },
+                            textTransform: 'none', bgcolor: PRIMARY, color: '#fff', borderRadius: '7px',
+                            fontSize: '13px', fontWeight: 700, px: 2.2, height: 40, boxShadow: 'none',
+                            '& .MuiButton-startIcon': { color: '#fff' },
+                            '&:hover': { bgcolor: PRIMARY_DARK, color: '#fff', boxShadow: 'none' },
                         }}
                     >
                         Add Leave Type
                     </Button>
                 </Box>
+
+                <Grid container spacing={1.5} sx={{ mb: 2 }}>
+                    {[
+                        { label: 'Total Types', value: policyStats.totalLeaveTypes, sub: 'Configured', icon: CategoryRoundedIcon, color: '#7C5CFC', bg: '#F1EEFE' },
+                        { label: 'Days / Month', value: `${policyStats.totalDaysPerMonth}d`, sub: 'Combined accrual', icon: EventAvailableRoundedIcon, color: '#16A34A', bg: '#DCFCE7' },
+                        { label: 'On-Demand', value: policyStats.onDemandUnlimited, sub: 'Unlimited types', icon: AllInclusiveRoundedIcon, color: '#F59E0B', bg: '#FFF7ED' },
+                        { label: 'Encashable', value: policyStats.encashableLeaveTypes, sub: 'Paid on unused', icon: PaidRoundedIcon, color: '#0EA5E9', bg: '#E0F2FE' },
+                    ].map((s, i) => (
+                        <Grid size={{ xs: 6, md: 3 }} key={i}>
+                            <Box sx={{
+                                p: 2, borderRadius: '7px', bgcolor: s.bg, border: `1px solid ${s.color}22`,
+                                boxShadow: '0 1px 3px rgba(16,24,40,0.06)', height: '100%',
+                                transition: 'transform .18s, box-shadow .18s',
+                                '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 8px 20px ${s.color}22` },
+                            }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <Box sx={{ minWidth: 0 }}>
+                                        <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</Typography>
+                                        <Typography sx={{ fontSize: 26, fontWeight: 800, color: '#0F172A', mt: 0.3, lineHeight: 1.1 }}>{s.value}</Typography>
+                                        <Typography sx={{ fontSize: 10.5, color: '#6B7280', mt: 0.2 }}>{s.sub}</Typography>
+                                    </Box>
+                                    <Box sx={{ width: 40, height: 40, borderRadius: '7px', bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <s.icon sx={{ color: s.color, fontSize: 20 }} />
+                                    </Box>
+                                </Box>
+                            </Box>
+                        </Grid>
+                    ))}
+                </Grid>
 
                 <Box sx={{
                     mb: 2, p: 1.5, borderRadius: '7px',

@@ -38,17 +38,14 @@ const theme = createTheme({
             defaultProps: { disableElevation: true },
             styleOverrides: {
                 root: { borderRadius: 7, boxShadow: 'none', fontWeight: 700 },
-                // Unified primary button — the violet gradient look used everywhere.
+                // Unified button — soft tonal violet (light fill, violet text).
                 contained: {
-                    background: GRADIENT,
-                    color: '#fff',
-                    boxShadow: '0 10px 22px -8px rgba(124,92,252,0.55)',
-                    '&:hover': {
-                        background: GRADIENT,
-                        filter: 'brightness(0.96)',
-                        boxShadow: '0 13px 26px -8px rgba(124,92,252,0.65)',
-                    },
-                    '&.Mui-disabled': { background: PRIMARY, color: '#fff', opacity: 0.55 },
+                    background: PRIMARY_LIGHT,
+                    color: PRIMARY,
+                    border: '1px solid #C9BEFB',
+                    boxShadow: 'none',
+                    '&:hover': { background: '#E7DFFC', boxShadow: 'none' },
+                    '&.Mui-disabled': { background: PRIMARY_LIGHT, color: PRIMARY, opacity: 0.5 },
                 },
             },
         },

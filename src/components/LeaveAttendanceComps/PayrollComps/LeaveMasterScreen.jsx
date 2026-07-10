@@ -230,6 +230,14 @@ const MONTH_NAMES_SHORT = [
 ];
 const computeEndMonth = (startMonth) => ((startMonth - 1 + 11) % 12) + 1;
 
+// Per-page header meta for the standalone (hideTabBar) Leave Policy routes.
+const LP_PAGES = [
+    { title: 'Policy Setup', subtitle: 'Auto-renew, shift timing, work hours, punctuality & bonus rules' },
+    { title: 'Leave Types', subtitle: 'Create and configure each leave type, its allocation and deduction rules' },
+    { title: 'Working Calendar', subtitle: 'Define working days, holidays and mandatory days for each month' },
+    { title: 'Assign Shifts', subtitle: 'Assign each staff member to a work shift for the year' },
+];
+
 
 export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }) {
     const navigate = useNavigate();
@@ -966,6 +974,16 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
             <SnackBar open={open} color={color} setOpen={setOpen} status={status} message={message} />
 
             <Box sx={{ width: '100%' }}>
+                {hideTabBar ? (
+                    <Box sx={{ px: 2, pt: 2, pb: 0.5 }}>
+                        <Typography sx={{ fontSize: 24, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
+                            {LP_PAGES[activeTab]?.title}
+                        </Typography>
+                        <Typography sx={{ fontSize: 13, color: '#6B7280', mt: 0.3 }}>
+                            {isLoadingMaster ? 'Loading…' : LP_PAGES[activeTab]?.subtitle}
+                        </Typography>
+                    </Box>
+                ) : (
                 <Box sx={{
                     position: 'fixed',
                     top: '60px',
@@ -981,9 +999,6 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                 }}>
                     <Grid container sx={{ alignItems: 'center' }} spacing={1}>
                         <Grid size={{ xs: 6, md: 3 }} sx={{ display: 'flex', alignItems: 'center' }}>
-                            <IconButton onClick={() => navigate(-1)} sx={{ width: '27px', height: '27px', mt: '2px' }}>
-                                <ArrowBackIcon sx={{ fontSize: 20, color: '#000' }} />
-                            </IconButton>
                             <Box sx={{ ml: 1, minWidth: 0 }}>
                                 <Typography sx={{ fontWeight: 600, fontSize: '17px', lineHeight: 1.1 }} noWrap>
                                     Leave Policy Master
@@ -1089,8 +1104,9 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
 
                     </Grid>
                 </Box>
+                )}
 
-                <Box sx={{ px: 2, pt: '26px', pb: 4 }}>
+                <Box sx={{ px: 2, pt: hideTabBar ? 1.5 : '26px', pb: 4 }}>
 
                     {activeTab === 0 && (<>
                         <Section icon={RestartAltIcon} title="Auto-Renew" color="#2563EB"
@@ -2318,13 +2334,6 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                     borderBottom: `1px solid ${PRIMARY}25`,
                     display: 'flex', alignItems: 'center', gap: 1.2,
                 }}>
-                    <Box sx={{
-                        width: 38, height: 38, borderRadius: '7px',
-                        bgcolor: '#fff', border: `1px solid ${PRIMARY}30`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                        <CalendarMonthIcon sx={{ color: PRIMARY, fontSize: 22 }} />
-                    </Box>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography sx={{ fontSize: 15, fontWeight: 800, color: '#0F172A', lineHeight: 1.1 }}>
                             New Academic Year Detected

@@ -714,7 +714,7 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
                                         onClick={() => setBulkDialogOpen(true)}
                                         sx={{
                                             textTransform: 'none', fontSize: 12.5, fontWeight: 700,
-                                            color: '#fff', background: 'linear-gradient(135deg, #7C5CFC 0%, #9B87FB 100%)', boxShadow: '0 10px 22px -8px rgba(124,92,252,0.5)',
+                                            background: '#F1EEFE', border: '1px solid #C9BEFB', boxShadow: 'none', color: '#7C5CFC',
                                             border: '1px solid #0F172A', borderRadius: '7px',
                                             px: 1.6, height: 32, boxShadow: 'none',
                                             '&:hover': { bgcolor: '#6246E0', borderColor: '#6246E0' },

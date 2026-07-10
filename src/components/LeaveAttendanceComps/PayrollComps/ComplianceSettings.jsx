@@ -37,7 +37,7 @@ const PRIMARY_LIGHT = '#F1EEFE';
 const PRIMARY_DARK = '#6246E0';
 const PRIMARY_BORDER = '#C9BEFB';
 
-const AVATAR_PALETTE = ['#0E7490', '#1D4ED8', '#C2410C', '#6246E0', '#1D4ED8', '#BE185D', '#A16207', '#0F766E'];
+const AVATAR_PALETTE = ['#0E7490', '#6D28D9', '#C2410C', '#6246E0', '#1D4ED8', '#BE185D', '#A16207', '#0F766E'];
 const avatarColorFor = (name = '') => {
     const code = (name.charCodeAt(0) || 0) + (name.charCodeAt(1) || 0);
     return AVATAR_PALETTE[code % AVATAR_PALETTE.length];
@@ -274,7 +274,6 @@ export default function ComplianceSettings() {
             'Employee Name': emp.name,
             'Designation': emp.designation,
             'Basic Salary': emp.basicSalary,
-            'Incentive': emp.incentive,
             'Additional Salary': emp.additionalSalary,
             'PF Applicable': emp.compliance.pfApplicable ? 'Yes' : 'No',
             'PF %': emp.compliance.pfApplicable ? `${emp.compliance.pfPercentage}%` : 'N/A',
@@ -519,14 +518,14 @@ export default function ComplianceSettings() {
                 icon={AccountBalanceIcon}
                 title="Provident Fund (PF) Configuration"
                 subtitle="Configure employee and employer PF contribution rates"
-                accent="#1D4ED8" accentLight="#F3F0FE" accentBorder="#C9BEFB"
+                accent="#6D28D9" accentLight="#F5F3FF" accentBorder="#DDD6FE"
             >
                 <ToggleRow
                     label="Enable PF Deduction"
                     description="Automatically deduct PF from employee salary"
                     checked={pfSettings.enabled}
                     onChange={(e) => setPfSettings({ ...pfSettings, enabled: e.target.checked })}
-                    accent="#1D4ED8"
+                    accent="#6D28D9"
                 />
                 <Grid container spacing={2}>
                     <Grid size={{ xs: 12, sm: 6 }}>
@@ -726,7 +725,7 @@ export default function ComplianceSettings() {
                 icon={AccountBalanceWalletIcon}
                 title="Tax Deducted at Source (TDS) Configuration"
                 subtitle="Configure income tax deduction settings and exemptions"
-                accent="#1D4ED8" accentLight="#F3F0FE" accentBorder="#C9BEFB"
+                accent="#1D4ED8" accentLight="#F3F0FE" accentBorder="#BFDBFE"
             >
                 <ToggleRow
                     label="Enable TDS Calculation"
@@ -819,28 +818,28 @@ export default function ComplianceSettings() {
                 label: 'Total Employees',
                 value: stats.totalEmployees,
                 sub: 'on payroll',
-                color: '#7C5CFC', bg: '#F1EEFE', border: '#C9BEFB',
+                color: '#7C5CFC', bg: '#F1EEFE',
                 icon: PeopleAltOutlinedIcon,
             },
             {
                 label: 'PF Applicable',
                 value: stats.pfApplicableCount,
                 sub: `of ${stats.totalEmployees}`,
-                color: '#1D4ED8', bg: '#F3F0FE', border: '#C9BEFB',
+                color: '#16A34A', bg: '#DCFCE7',
                 icon: AccountBalanceIcon,
             },
             {
                 label: 'ESI Applicable',
                 value: stats.esiApplicableCount,
                 sub: `of ${stats.totalEmployees}`,
-                color: '#6246E0', bg: '#F1EEFE', border: '#C9BEFB',
+                color: '#0EA5E9', bg: '#E0F2FE',
                 icon: SecurityIcon,
             },
             {
                 label: 'PT Applicable',
                 value: stats.ptApplicableCount,
                 sub: `of ${stats.totalEmployees}`,
-                color: '#C2410C', bg: '#FFF7ED', border: '#FED7AA',
+                color: '#F59E0B', bg: '#FFF7ED',
                 icon: ReceiptIcon,
             },
         ];
@@ -853,89 +852,57 @@ export default function ComplianceSettings() {
                         const Icon = card.icon;
                         return (
                             <Grid size={{ xs: 12, sm: 6, md: 3 }} key={card.label}>
-                                <Card sx={{
-                                    border: `1px solid ${card.border}`,
+                                <Box sx={{
+                                    p: 2.5,
                                     borderRadius: '7px',
-                                    boxShadow: 'none',
                                     bgcolor: card.bg,
+                                    border: `1px solid ${card.color}22`,
+                                    boxShadow: '0 1px 3px rgba(16,24,40,0.06)',
                                     height: '100%',
                                     transition: 'transform 0.15s, box-shadow 0.15s',
                                     '&:hover': {
                                         transform: 'translateY(-2px)',
-                                        boxShadow: `0 6px 16px ${card.color}22`,
+                                        boxShadow: `0 8px 20px ${card.color}22`,
                                     },
                                 }}>
-                                    <CardContent sx={{ py: 1.8, '&:last-child': { pb: 1.8 } }}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                <Typography sx={{
-                                                    fontSize: '11px', color: card.color, fontWeight: 700,
-                                                    textTransform: 'uppercase', letterSpacing: 0.5,
-                                                }}>
-                                                    {card.label}
-                                                </Typography>
-                                                <Typography sx={{
-                                                    fontSize: '24px', fontWeight: 800, color: '#111827',
-                                                    lineHeight: 1.2, mt: 0.5,
-                                                }} noWrap>
-                                                    {card.value}
-                                                </Typography>
-                                                <Typography sx={{
-                                                    fontSize: '10.5px', color: '#6B7280', fontWeight: 600, mt: 0.4,
-                                                }} noWrap>
-                                                    {card.sub}
-                                                </Typography>
-                                            </Box>
-                                            <Box sx={{
-                                                width: 38, height: 38, borderRadius: '7px',
-                                                bgcolor: '#fff', border: `1px solid ${card.border}`,
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                flexShrink: 0, ml: 1,
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                                            <Typography sx={{
+                                                fontSize: '11px', color: card.color, fontWeight: 700,
+                                                textTransform: 'uppercase', letterSpacing: 0.5,
                                             }}>
-                                                <Icon sx={{ color: card.color, fontSize: 20 }} />
-                                            </Box>
+                                                {card.label}
+                                            </Typography>
+                                            <Typography sx={{
+                                                fontSize: '28px', fontWeight: 800, color: '#0F172A',
+                                                lineHeight: 1.2, mt: 0.5,
+                                            }} noWrap>
+                                                {card.value}
+                                            </Typography>
+                                            <Typography sx={{
+                                                fontSize: '10.5px', color: '#6B7280', fontWeight: 600, mt: 0.4,
+                                            }} noWrap>
+                                                {card.sub}
+                                            </Typography>
                                         </Box>
-                                    </CardContent>
-                                </Card>
+                                        <Box sx={{
+                                            width: 44, height: 44, borderRadius: '7px',
+                                            bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            flexShrink: 0, ml: 1,
+                                        }}>
+                                            <Icon sx={{ color: card.color, fontSize: 22 }} />
+                                        </Box>
+                                    </Box>
+                                </Box>
                             </Grid>
                         );
                     })}
                 </Grid>
 
-                {/* Secondary KPIs — incentives & additional salary */}
+                {/* Secondary KPI — additional salary */}
                 <Grid container spacing={2} sx={{ mb: 2 }}>
-                    <Grid size={{ xs: 12, md: 6 }}>
-                        <Card sx={{
-                            border: '1px solid #C9BEFB',
-                            borderRadius: '7px',
-                            boxShadow: 'none',
-                            bgcolor: '#F1EEFE',
-                        }}>
-                            <CardContent sx={{ py: 1.8, '&:last-child': { pb: 1.8 } }}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Box>
-                                        <Typography sx={{ fontSize: '11px', color: '#6246E0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                            Total Incentives
-                                        </Typography>
-                                        <Typography sx={{ fontSize: '22px', fontWeight: 800, color: '#111827', lineHeight: 1.2, mt: 0.5 }}>
-                                            {formatINR(stats.totalIncentives)}
-                                        </Typography>
-                                        <Typography sx={{ fontSize: '10.5px', color: '#6B7280', fontWeight: 600, mt: 0.4 }}>
-                                            {stats.incentiveEmployeesCount} employees receiving incentives
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{
-                                        width: 42, height: 42, borderRadius: '7px',
-                                        bgcolor: '#fff', border: '1px solid #C9BEFB',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    }}>
-                                        <TrendingUpIcon sx={{ color: '#6246E0', fontSize: 22 }} />
-                                    </Box>
-                                </Box>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 6 }}>
+                    <Grid size={{ xs: 12 }}>
                         <Card sx={{
                             border: '1px solid #FECACA',
                             borderRadius: '7px',
@@ -969,11 +936,11 @@ export default function ComplianceSettings() {
                 </Grid>
 
                 {/* Table */}
-                <Card sx={{ border: '1px solid #E5E7EB', borderRadius: '7px', boxShadow: 'none', bgcolor: '#fff' }}>
+                <Card sx={{ border: '1px solid #ECEBF5', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.05)', bgcolor: '#fff', overflow: 'hidden' }}>
                     <Box sx={{
-                        px: 2, py: 1.5,
-                        borderBottom: '1px solid #E5E7EB',
-                        bgcolor: '#fff',
+                        px: 2, py: 1.6,
+                        borderBottom: '1px solid #EAE7F7',
+                        bgcolor: '#F7F6FD',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -982,21 +949,21 @@ export default function ComplianceSettings() {
                     }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Box sx={{
-                                width: 28, height: 28, borderRadius: '7px',
-                                bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
+                                width: 32, height: 32, borderRadius: '9px',
+                                bgcolor: '#fff', boxShadow: '0 1px 4px rgba(16,24,40,0.12)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
-                                <VerifiedUserIcon sx={{ fontSize: 16, color: PRIMARY }} />
+                                <VerifiedUserIcon sx={{ fontSize: 17, color: PRIMARY }} />
                             </Box>
-                            <Typography sx={{ fontSize: '14px', fontWeight: 700, color: '#111827' }}>
+                            <Typography sx={{ fontSize: '14.5px', fontWeight: 800, color: '#0F172A' }}>
                                 Employee Compliance Settings
                             </Typography>
                             <Chip
                                 label={`${employeeData.length} employees`}
                                 size="small"
                                 sx={{
-                                    bgcolor: '#F3F4F6', color: '#374151',
-                                    fontWeight: 600, fontSize: '11px', height: 20,
+                                    bgcolor: PRIMARY_LIGHT, color: PRIMARY,
+                                    fontWeight: 700, fontSize: '11px', height: 20,
                                 }}
                             />
                         </Box>
@@ -1032,20 +999,20 @@ export default function ComplianceSettings() {
                     <TableContainer>
                         <Table stickyHeader size="small">
                             <TableHead>
-                                <TableRow sx={{ bgcolor: PRIMARY_LIGHT }}>
+                                <TableRow>
                                     {[
-                                        'S.No', 'Employee', 'Basic Salary', 'Incentive',
+                                        'S.No', 'Employee', 'Basic Salary',
                                         'Add. Salary', 'PF', 'ESI', 'PT', 'TDS', 'Actions',
                                     ].map((header) => (
                                         <TableCell
                                             key={header}
                                             sx={{
-                                                fontWeight: 700, fontSize: '10px',
-                                                color: PRIMARY_DARK,
-                                                bgcolor: PRIMARY_LIGHT,
-                                                textTransform: 'uppercase', letterSpacing: 0.6,
-                                                whiteSpace: 'nowrap', py: 1.3,
-                                                borderBottom: `1px solid ${PRIMARY_BORDER}`,
+                                                fontWeight: 700, fontSize: '10.5px',
+                                                color: '#6E6B99',
+                                                bgcolor: '#F4F3FB',
+                                                textTransform: 'uppercase', letterSpacing: 0.7,
+                                                whiteSpace: 'nowrap', py: 1.5,
+                                                borderBottom: '1px solid #E8E6F3',
                                             }}
                                         >
                                             {header}
@@ -1056,7 +1023,7 @@ export default function ComplianceSettings() {
                             <TableBody>
                                 {isLoading ? (
                                     <TableRow>
-                                        <TableCell colSpan={10} align="center" sx={{ py: 6, borderBottom: 'none' }}>
+                                        <TableCell colSpan={9} align="center" sx={{ py: 6, borderBottom: 'none' }}>
                                             <CircularProgress size={28} sx={{ color: PRIMARY }} />
                                             <Typography sx={{ fontSize: '12px', color: '#9CA3AF', mt: 1.2 }}>
                                                 Loading compliance data…
@@ -1065,7 +1032,7 @@ export default function ComplianceSettings() {
                                     </TableRow>
                                 ) : filteredEmployees.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={10} align="center" sx={{ py: 6, borderBottom: 'none' }}>
+                                        <TableCell colSpan={9} align="center" sx={{ py: 6, borderBottom: 'none' }}>
                                             <Box sx={{
                                                 width: 56, height: 56, borderRadius: '50%',
                                                 bgcolor: '#F3F4F6', mx: 'auto', mb: 1.2,
@@ -1087,17 +1054,17 @@ export default function ComplianceSettings() {
                                         <TableRow
                                             key={emp.id}
                                             sx={{
-                                                '&:hover': { bgcolor: PRIMARY_LIGHT },
-                                                borderBottom: '1px solid #F3F4F6',
+                                                bgcolor: idx % 2 ? '#FBFAFE' : '#fff',
+                                                '&:hover': { bgcolor: '#F5F4FC' },
                                                 transition: 'background-color 0.15s',
                                             }}
                                         >
-                                            <TableCell sx={{ width: 50, borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                            <TableCell sx={{ width: 50, borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                 <Typography sx={{ fontSize: '12px', color: '#9CA3AF', fontWeight: 500 }}>
                                                     {idx + 1}
                                                 </Typography>
                                             </TableCell>
-                                            <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                            <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
                                                     <Avatar sx={{
                                                         width: 32, height: 32,
@@ -1121,22 +1088,10 @@ export default function ComplianceSettings() {
                                                     </Box>
                                                 </Box>
                                             </TableCell>
-                                            <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                            <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                 <Typography sx={{ fontSize: '13px', fontWeight: 700, color: '#111827' }}>
                                                     {formatINR(emp.basicSalary)}
                                                 </Typography>
-                                            </TableCell>
-                                            <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2, textAlign: 'center' }}>
-                                                <Chip
-                                                    label={emp.incentive > 0 ? formatINR(emp.incentive) : 'Nil'}
-                                                    size="small"
-                                                    sx={{
-                                                        bgcolor: emp.incentive > 0 ? '#F1EEFE' : '#F3F4F6',
-                                                        color: emp.incentive > 0 ? '#6246E0' : '#9CA3AF',
-                                                        border: `1px solid ${emp.incentive > 0 ? '#C9BEFB' : '#E5E7EB'}`,
-                                                        fontWeight: 700, fontSize: '10.5px', height: 22,
-                                                    }}
-                                                />
                                             </TableCell>
                                             <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2, textAlign: 'center' }}>
                                                 <Chip
@@ -1155,9 +1110,9 @@ export default function ComplianceSettings() {
                                                     label={emp.compliance.pfApplicable ? `${emp.compliance.pfPercentage}%` : 'N/A'}
                                                     size="small"
                                                     sx={{
-                                                        bgcolor: emp.compliance.pfApplicable ? '#F3F0FE' : '#F3F4F6',
-                                                        color: emp.compliance.pfApplicable ? '#1D4ED8' : '#9CA3AF',
-                                                        border: `1px solid ${emp.compliance.pfApplicable ? '#C9BEFB' : '#E5E7EB'}`,
+                                                        bgcolor: emp.compliance.pfApplicable ? '#F5F3FF' : '#F3F4F6',
+                                                        color: emp.compliance.pfApplicable ? '#6D28D9' : '#9CA3AF',
+                                                        border: `1px solid ${emp.compliance.pfApplicable ? '#DDD6FE' : '#E5E7EB'}`,
                                                         fontWeight: 700, fontSize: '10.5px', height: 22,
                                                     }}
                                                 />
@@ -1193,7 +1148,7 @@ export default function ComplianceSettings() {
                                                     sx={{
                                                         bgcolor: emp.compliance.tdsApplicable ? '#F3F0FE' : '#F3F4F6',
                                                         color: emp.compliance.tdsApplicable ? '#1D4ED8' : '#9CA3AF',
-                                                        border: `1px solid ${emp.compliance.tdsApplicable ? '#C9BEFB' : '#E5E7EB'}`,
+                                                        border: `1px solid ${emp.compliance.tdsApplicable ? '#BFDBFE' : '#E5E7EB'}`,
                                                         fontWeight: 700, fontSize: '10.5px', height: 22,
                                                     }}
                                                 />
@@ -1205,7 +1160,7 @@ export default function ComplianceSettings() {
                                                         onClick={() => handleEditEmployee(emp)}
                                                         sx={{
                                                             bgcolor: '#F3F0FE', borderRadius: '7px',
-                                                            border: '1px solid #C9BEFB',
+                                                            border: '1px solid #BFDBFE',
                                                             '&:hover': { bgcolor: '#DBEAFE' },
                                                         }}
                                                     >
@@ -1235,26 +1190,12 @@ export default function ComplianceSettings() {
             <Box sx={{
                 display: 'flex',
                 flexDirection: 'column',
-                bgcolor: '#F9FAFB',
-                borderRadius: '16px',
-                border: '1px solid #E5E7EB',
-                overflow: 'hidden',
                 minHeight: '88vh',
+                p: 2,
             }}>
                 {/* ─── Header (fixed) ──────────────────────────────────────── */}
                 <Box sx={{
-                    position: "static",
-                    top: "60px",
-                    left: isExpanded ? "260px" : "80px",
-                    right: 0,
-                    backgroundColor: "transparent",
-                    px: 2,
-                    py: 1,
-                    borderBottom: "1px solid #ddd",
-                    borderTop: "none",
-                    zIndex: 1200,
-                    transition: "left 0.3s ease-in-out",
-                    overflow: 'hidden',
+                    pb: 2.5,
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -1262,31 +1203,12 @@ export default function ComplianceSettings() {
                     gap: 1.5,
                 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <IconButton
-                            onClick={() => navigate(-1)}
-                            sx={{
-                                width: 38, height: 38,
-                                bgcolor: '#F9FAFB',
-                                border: '1px solid #E5E7EB',
-                                borderRadius: '7px',
-                                '&:hover': { bgcolor: PRIMARY_LIGHT, borderColor: PRIMARY_BORDER },
-                            }}
-                        >
-                            <ArrowBackIcon sx={{ fontSize: 18, color: '#374151' }} />
-                        </IconButton>
-                        <Box sx={{
-                            width: 38, height: 38, borderRadius: '7px',
-                            bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                            <VerifiedUserIcon sx={{ color: PRIMARY, fontSize: 20 }} />
-                        </Box>
                         <Box>
-                            <Typography sx={{ fontSize: '16px', fontWeight: 800, color: '#111827', lineHeight: 1.1 }}>
-                                Auto-Deductions & Compliance
+                            <Typography sx={{ fontSize: '24px', fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
+                                Statutory Deductions
                             </Typography>
-                            <Typography sx={{ fontSize: '11.5px', color: '#6B7280', mt: 0.3 }}>
-                                Configure statutory compliance settings and per-employee deductions
+                            <Typography sx={{ fontSize: '13px', color: '#6B7280', mt: 0.3 }}>
+                                Configure PF, ESI, Professional Tax &amp; TDS deductions for your workforce
                             </Typography>
                         </Box>
                     </Box>
@@ -1348,7 +1270,7 @@ export default function ComplianceSettings() {
                                     px: 2.2, height: 34,
                                     boxShadow: 'none',
                                     '&:hover': {
-                                        bgcolor: '#DBEAFE',
+                                        bgcolor: '#E7DFFC',
                                         borderColor: PRIMARY,
                                         boxShadow: 'none',
                                     },
@@ -1369,17 +1291,17 @@ export default function ComplianceSettings() {
                                 disabled={anyConfigSaving}
                                 sx={{
                                     textTransform: 'none',
-                                    background: 'linear-gradient(135deg, #7C5CFC 0%, #9B87FB 100%)', boxShadow: '0 10px 22px -8px rgba(124,92,252,0.5)',
-                                    color: '#fff',
+                                    bgcolor: '#F1EEFE',
+                                    color: '#7C5CFC',
                                     borderRadius: '30px',
                                     fontSize: '12.5px',
                                     fontWeight: 700,
                                     px: 2.4, height: 34,
                                     boxShadow: 'none',
-                                    border: '1.5px solid #0F172A',
+                                    border: '1.5px solid #C9BEFB',
                                     '&:hover': {
-                                        bgcolor: '#6246E0',
-                                        borderColor: '#6246E0',
+                                        bgcolor: '#E7DFFC',
+                                        borderColor: '#C9BEFB',
                                         boxShadow: 'none',
                                     },
                                     '&.Mui-disabled': { bgcolor: '#E5E7EB', color: '#9CA3AF', borderColor: '#E5E7EB' },
@@ -1393,10 +1315,12 @@ export default function ComplianceSettings() {
 
                 {/* ─── Tabs ────────────────────────────────────────────────── */}
                 <Box sx={{
-                    mt: '10px',
+                    mb: 1.5,
                     bgcolor: '#fff',
-                    borderBottom: '1px solid #E5E7EB',
-                    px: 2,
+                    border: '1px solid #E6EAF1',
+                    borderRadius: '7px',
+                    boxShadow: '0 1px 3px rgba(16,24,40,0.05)',
+                    px: 1,
                 }}>
                     <Tabs
                         value={activeTab}
@@ -1426,7 +1350,7 @@ export default function ComplianceSettings() {
                 </Box>
 
                 {/* ─── Body ────────────────────────────────────────────────── */}
-                <Box sx={{ flex: 1, pb: 2, px: 2, pt: 2 }}>
+                <Box sx={{ flex: 1 }}>
                     {activeTab === 0 && renderEmployeeComplianceTab()}
                     {activeTab === 1 && renderPFTab()}
                     {activeTab === 2 && renderESITab()}
@@ -1461,10 +1385,10 @@ export default function ComplianceSettings() {
                             <EditIcon sx={{ color: PRIMARY, fontSize: 20 }} />
                         </Box>
                         <Box>
-                            <Typography sx={{ fontSize: '16px', fontWeight: 800, color: '#111827', lineHeight: 1.1 }}>
+                            <Typography sx={{ fontSize: '24px', fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
                                 Edit Compliance Settings
                             </Typography>
-                            <Typography sx={{ fontSize: '11.5px', color: '#6B7280', mt: 0.3 }}>
+                            <Typography sx={{ fontSize: '13px', color: '#6B7280', mt: 0.3 }}>
                                 Update statutory deductions and salary components for this employee
                             </Typography>
                         </Box>
@@ -1555,32 +1479,11 @@ export default function ComplianceSettings() {
                                         fontSize: '11px', fontWeight: 700, color: '#374151',
                                         textTransform: 'uppercase', letterSpacing: 0.6,
                                     }}>
-                                        Salary Components
+                                        Additional Earnings
                                     </Typography>
                                 </Box>
                                 <Grid container spacing={2}>
-                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                        <TextField
-                                            label="Performance Incentive"
-                                            value={selectedEmployee.incentive}
-                                            onChange={(e) => {
-                                                const val = parseFloat(e.target.value) || 0;
-                                                setEmployeeData(employeeData.map(emp =>
-                                                    emp.id === selectedEmployee.id ? { ...emp, incentive: val } : emp
-                                                ));
-                                                setSelectedEmployee({ ...selectedEmployee, incentive: val });
-                                            }}
-                                            size="small" fullWidth type="number"
-                                            slotProps={{
-                                                inputLabel: { shrink: true },
-                                                input: { startAdornment: <InputAdornment position="start">₹</InputAdornment> },
-                                                formHelperText: { sx: { fontSize: '10.5px', color: '#6B7280', ml: 0.5, mt: 0.3 } },
-                                            }}
-                                            helperText="Monthly performance-based incentive"
-                                            sx={fieldSx}
-                                        />
-                                    </Grid>
-                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                    <Grid size={{ xs: 12 }}>
                                         <TextField
                                             label="Additional Salary"
                                             value={selectedEmployee.additionalSalary}
@@ -1610,16 +1513,16 @@ export default function ComplianceSettings() {
                                 <Grid size={{ xs: 12, sm: 6 }}>
                                     <Box sx={{
                                         p: 2, bgcolor: '#fff', borderRadius: '7px',
-                                        border: '1px solid #C9BEFB',
+                                        border: '1px solid #DDD6FE',
                                     }}>
                                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                 <Box sx={{
                                                     width: 28, height: 28, borderRadius: '7px',
-                                                    bgcolor: '#F3F0FE', border: '1px solid #C9BEFB',
+                                                    bgcolor: '#F5F3FF', border: '1px solid #DDD6FE',
                                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                 }}>
-                                                    <AccountBalanceIcon sx={{ fontSize: 15, color: '#1D4ED8' }} />
+                                                    <AccountBalanceIcon sx={{ fontSize: 15, color: '#6D28D9' }} />
                                                 </Box>
                                                 <Typography sx={{ fontSize: '13px', fontWeight: 700, color: '#111827' }}>
                                                     Provident Fund
@@ -1630,8 +1533,8 @@ export default function ComplianceSettings() {
                                                 onChange={(e) => setEditedCompliance({ ...editedCompliance, pfApplicable: e.target.checked })}
                                                 size="small"
                                                 sx={{
-                                                    '& .MuiSwitch-switchBase.Mui-checked': { color: '#1D4ED8' },
-                                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#1D4ED8' },
+                                                    '& .MuiSwitch-switchBase.Mui-checked': { color: '#6D28D9' },
+                                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#6D28D9' },
                                                 }}
                                             />
                                         </Box>
@@ -1742,13 +1645,13 @@ export default function ComplianceSettings() {
                                 <Grid size={{ xs: 12, sm: 6 }}>
                                     <Box sx={{
                                         p: 2, bgcolor: '#fff', borderRadius: '7px',
-                                        border: '1px solid #C9BEFB',
+                                        border: '1px solid #BFDBFE',
                                     }}>
                                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                 <Box sx={{
                                                     width: 28, height: 28, borderRadius: '7px',
-                                                    bgcolor: '#F3F0FE', border: '1px solid #C9BEFB',
+                                                    bgcolor: '#F3F0FE', border: '1px solid #BFDBFE',
                                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                 }}>
                                                     <AccountBalanceWalletIcon sx={{ fontSize: 15, color: '#1D4ED8' }} />

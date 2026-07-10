@@ -5,6 +5,12 @@ import LoginPage from './pages/LoginPage';
 import DashboardLayout from './layouts/DashboardLayout';
 import DashboardPage from './pages/DashboardPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+import EmployeesPage from './pages/EmployeesPage';
+import OnboardEmployeePage from './pages/OnboardEmployeePage';
+import EmployeeDetailPage from './pages/EmployeeDetailPage';
+import RolesPage from './pages/RolesPage';
+import RoleUsersPage from './pages/RoleUsersPage';
+import RoleAccessPage from './pages/RoleAccessPage';
 
 // Payroll screens
 import SalaryStructures from './components/LeaveAttendanceComps/PayrollComps/SalaryStructures';
@@ -13,6 +19,8 @@ import BankReports from './components/LeaveAttendanceComps/PayrollComps/BankRepo
 import SalaryRegister from './components/LeaveAttendanceComps/PayrollComps/SalaryRegister';
 import ApprovePayroll from './components/LeaveAttendanceComps/PayrollComps/ApprovePayroll';
 import MarkSalaryCreditedPage from './components/LeaveAttendanceComps/PayrollComps/MarkSalaryCreditedPage';
+import SalaryAdvancesPage from './pages/SalaryAdvancesPage';
+import OvertimePage from './pages/OvertimePage';
 
 // Leave & attendance screens
 import StaffAttendanceOverviewPage from './components/LeaveAttendanceComps/StaffAttendanceOverviewPage';
@@ -43,6 +51,14 @@ export default function App() {
             <Route element={<ProtectedRoute />}>
                 <Route path="/dashboard" element={<DashboardLayout />}>
                     <Route index element={<DashboardPage />} />
+                    <Route path="employees" element={<EmployeesPage />} />
+                    <Route path="employees/onboard" element={<OnboardEmployeePage />} />
+                    <Route path="employees/:id" element={<EmployeeDetailPage />} />
+
+                    {/* Roles & Access */}
+                    <Route path="roles" element={<RolesPage />} />
+                    <Route path="roles/:roleId/users" element={<RoleUsersPage />} />
+                    <Route path="roles/:roleId/access" element={<RoleAccessPage />} />
 
                     {/* Payroll */}
                     <Route path="salary-structures" element={<SalaryStructures />} />
@@ -51,6 +67,8 @@ export default function App() {
                     <Route path="salary-register" element={<SalaryRegister />} />
                     <Route path="approve-payroll" element={<ApprovePayroll />} />
                     <Route path="salary-credited" element={<MarkSalaryCreditedPage />} />
+                    <Route path="advances" element={<SalaryAdvancesPage />} />
+                    <Route path="overtime" element={<OvertimePage />} />
 
                     {/* Leave & Attendance */}
                     <Route path="attendance-overview" element={<StaffAttendanceOverviewPage />} />
@@ -58,11 +76,12 @@ export default function App() {
                     <Route path="leave-management" element={<LeaveManagementPage />} />
                     <Route path="attendance-reports" element={<AttendanceReportsPage />} />
 
-                    {/* Leave Policy — each tab as its own page (no tab bar) */}
-                    <Route path="leave-policy/setup" element={<LeaveMasterScreen initialTab={0} hideTabBar />} />
-                    <Route path="leave-policy/types" element={<LeaveMasterScreen initialTab={1} hideTabBar />} />
-                    <Route path="leave-policy/calendar" element={<LeaveMasterScreen initialTab={2} hideTabBar />} />
-                    <Route path="leave-policy/shifts" element={<LeaveMasterScreen initialTab={3} hideTabBar />} />
+                    {/* Leave Policy — each tab as its own page (no tab bar).
+                        The `key` forces a fresh mount per route so activeTab tracks initialTab. */}
+                    <Route path="leave-policy/setup" element={<LeaveMasterScreen key="lp-setup" initialTab={0} hideTabBar />} />
+                    <Route path="leave-policy/types" element={<LeaveMasterScreen key="lp-types" initialTab={1} hideTabBar />} />
+                    <Route path="leave-policy/calendar" element={<LeaveMasterScreen key="lp-calendar" initialTab={2} hideTabBar />} />
+                    <Route path="leave-policy/shifts" element={<LeaveMasterScreen key="lp-shifts" initialTab={3} hideTabBar />} />
 
                     <Route path="settings" element={<PlaceholderPage title="Settings" />} />
                 </Route>

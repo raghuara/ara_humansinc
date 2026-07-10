@@ -107,7 +107,7 @@ const getCellStyle = (status) => {
         late:    { bgcolor: '#FFF3E0', color: '#E65100', border: '1px solid #FFCC80' },
         absent:  { bgcolor: '#FFEBEE', color: '#C62828', border: '1px solid #EF9A9A' },
         leave:   { bgcolor: '#E3F2FD', color: '#1565C0', border: '1px solid #90CAF9' },
-        none:    { bgcolor: '#F9FAFB', color: '#bbb',    border: '1px solid #E8E8E8' },
+        none:    { bgcolor: '#F4F3FB', color: '#bbb',    border: '1px solid #E8E8E8' },
     };
     return styles[status] || styles.none;
 };
@@ -225,10 +225,10 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
     const { cards, dateHeaders } = overviewData;
 
     const STAT_CARDS = [
-        { title: 'Total Present', value: cards.totalPresent ?? 0, icon: CheckCircleIcon, color: '#22C55E', border: '#22C55E', bg: '#EFF5FF' },
-        { title: 'Total Late',    value: cards.totalLate    ?? 0, icon: AccessTimeIcon,  color: '#F97316', border: '#F97316', bg: '#FFF7ED' },
-        { title: 'Total Leave',   value: cards.totalLeave   ?? 0, icon: EventBusyIcon,   color: '#7C5CFC', border: '#7C5CFC', bg: '#F3F0FE' },
-        { title: 'Total Absent',  value: cards.totalAbsent  ?? 0, icon: CancelIcon,      color: '#DC2626', border: '#DC2626', bg: '#FEF2F2' },
+        { title: 'Total Present', value: cards.totalPresent ?? 0, icon: CheckCircleIcon, color: '#16A34A', bg: '#DCFCE7' },
+        { title: 'Total Late',    value: cards.totalLate    ?? 0, icon: AccessTimeIcon,  color: '#F59E0B', bg: '#FFF7ED' },
+        { title: 'Total Leave',   value: cards.totalLeave   ?? 0, icon: EventBusyIcon,   color: '#7C5CFC', bg: '#F1EEFE' },
+        { title: 'Total Absent',  value: cards.totalAbsent  ?? 0, icon: CancelIcon,      color: '#E11D48', bg: '#FEE2E2' },
     ];
 
     const viewLabel = viewBy === '7days' ? 'Last 7 days' : viewBy === '15days' ? 'Last 15 days' : 'Custom range';
@@ -236,38 +236,25 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
     return (
         <>
         <SnackBar open={snackOpen} color={snackColor} setOpen={setSnackOpen} status={snackStatus} message={snackMessage} />
-        <Box sx={{
-            border: isEmbedded ? 'none' : '1px solid #E8E8E8',
-            borderRadius: isEmbedded ? '0' : '20px',
-            p: isEmbedded ? 0 : 2,
-            height: isEmbedded ? 'auto' : '86vh',
-            overflow: 'auto',
-        }}>
+        <Box sx={{ p: isEmbedded ? 0 : 2 }}>
             {/* Header — hidden when embedded */}
             {!isEmbedded && (
-                <>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <IconButton onClick={() => navigate(-1)}>
-                                <ArrowBackIcon />
-                            </IconButton>
-                            <Typography sx={{ fontSize: '24px', fontWeight: '700' }}>
-                                Staff Attendance Overview
-                            </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1.5 }}>
-                            <Button variant="outlined" startIcon={<PrintIcon />} onClick={() => window.print()}
-                                sx={{ textTransform: 'none', borderRadius: '7px', borderColor: '#E8E8E8', color: '#333' }}>
-                                Print
-                            </Button>
-                            <Button variant="contained" startIcon={<FileDownloadIcon />}
-                                sx={{ textTransform: 'none', borderRadius: '7px', bgcolor: '#3457D5', '&:hover': { bgcolor: '#2847C4' } }}>
-                                Export Report
-                            </Button>
-                        </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, mb: 2.5, flexWrap: 'wrap', gap: 1.5 }}>
+                    <Box>
+                        <Typography sx={{ fontSize: 24, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>Staff Attendance Overview</Typography>
+                        <Typography sx={{ fontSize: 13, color: '#6B7280', mt: 0.3 }}>Track daily attendance across your workforce</Typography>
                     </Box>
-                    <Divider sx={{ mb: 2 }} />
-                </>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button startIcon={<PrintIcon sx={{ fontSize: 18 }} />} onClick={() => window.print()}
+                            sx={{ textTransform: 'none', fontSize: 12.5, fontWeight: 700, color: '#334155', bgcolor: '#F1F5F9', borderRadius: '7px', height: 42, px: 2, '&:hover': { bgcolor: '#E2E8F0' } }}>
+                            Print
+                        </Button>
+                        <Button startIcon={<FileDownloadIcon sx={{ fontSize: 18 }} />}
+                            sx={{ textTransform: 'none', fontSize: 12.5, fontWeight: 700, color: '#7C5CFC', bgcolor: '#F1EEFE', border: '1px solid #C9BEFB', borderRadius: '7px', height: 42, px: 2.2, '&:hover': { bgcolor: '#E7DFFC' } }}>
+                            Export Report
+                        </Button>
+                    </Box>
+                </Box>
             )}
 
             {/* ── Filter Bar ──────────────────────────────────────────────── */}
@@ -318,7 +305,7 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                 borderRadius: '7px', flexWrap: 'wrap',
             }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <DateRangeIcon sx={{ fontSize: 17, color: '#3457D5' }} />
+                    <DateRangeIcon sx={{ fontSize: 17, color: '#7C5CFC' }} />
                     <Typography sx={{ fontSize: '13px', fontWeight: '700', color: '#1a1a1a' }}>
                         View By:
                     </Typography>
@@ -331,14 +318,14 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                         sx={{
                             px: 2, py: 0.6, borderRadius: '20px', cursor: 'pointer',
                             fontSize: '13px', fontWeight: '600',
-                            bgcolor: viewBy === opt.value ? '#3457D5' : '#fff',
+                            bgcolor: viewBy === opt.value ? '#7C5CFC' : '#fff',
                             color:   viewBy === opt.value ? '#fff' : '#555',
-                            border: `1px solid ${viewBy === opt.value ? '#3457D5' : '#E0E0E0'}`,
+                            border: `1px solid ${viewBy === opt.value ? '#7C5CFC' : '#E0E0E0'}`,
                             transition: 'all 0.18s',
                             '&:hover': {
-                                bgcolor: viewBy === opt.value ? '#2847C4' : '#EEF2FF',
-                                borderColor: '#3457D5',
-                                color: viewBy === opt.value ? '#fff' : '#3457D5',
+                                bgcolor: viewBy === opt.value ? '#6246E0' : '#F1EEFE',
+                                borderColor: '#7C5CFC',
+                                color: viewBy === opt.value ? '#fff' : '#7C5CFC',
                             },
                         }}
                     >
@@ -357,7 +344,7 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                             onChange={(e) => setFromDate(e.target.value)}
                             sx={{
                                 width: '140px', bgcolor: '#fff',
-                                '& .MuiOutlinedInput-root': { borderRadius: '7px', fontSize: '13px', '& fieldset': { borderColor: '#3457D5' } },
+                                '& .MuiOutlinedInput-root': { borderRadius: '7px', fontSize: '13px', '& fieldset': { borderColor: '#7C5CFC' } },
                             }}
                         />
                         <Typography sx={{ fontSize: '12px', color: '#555', fontWeight: '500' }}>To:</Typography>
@@ -368,7 +355,7 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                             onChange={(e) => setToDate(e.target.value)}
                             sx={{
                                 width: '140px', bgcolor: '#fff',
-                                '& .MuiOutlinedInput-root': { borderRadius: '7px', fontSize: '13px', '& fieldset': { borderColor: '#3457D5' } },
+                                '& .MuiOutlinedInput-root': { borderRadius: '7px', fontSize: '13px', '& fieldset': { borderColor: '#7C5CFC' } },
                             }}
                         />
                         <Button
@@ -378,7 +365,7 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                             disabled={!fromDate || !toDate}
                             sx={{
                                 textTransform: 'none', borderRadius: '7px',
-                                bgcolor: '#3457D5', '&:hover': { bgcolor: '#2847C4' },
+                                bgcolor: '#7C5CFC', '&:hover': { bgcolor: '#6246E0' },
                                 fontSize: '12px', fontWeight: '600', px: 2,
                             }}
                         >
@@ -394,42 +381,42 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                     const Icon = card.icon;
                     return (
                         <Grid key={card.title} size={{ xs: 6, sm: 3, md: 3, lg: 3 }}>
-                            <Card sx={{
-                                boxShadow: 'none', border: `1px solid ${card.border}`,
-                                borderRadius: '7px', bgcolor: card.bg,
-                                transition: 'transform 0.2s, box-shadow 0.2s',
-                                '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' },
+                            <Box sx={{
+                                p: 2.5, borderRadius: '7px', bgcolor: card.bg,
+                                border: `1px solid ${card.color}22`,
+                                boxShadow: '0 1px 3px rgba(16,24,40,0.06)',
+                                height: '100%',
+                                transition: 'transform 0.15s, box-shadow 0.15s',
+                                '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 8px 20px ${card.color}22` },
                             }}>
-                                <CardContent sx={{ py: '14px !important' }}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                        <Box>
-                                            <Typography sx={{ fontSize: '11px', color: '#666', mb: 0.5 }}>
-                                                {card.title}
-                                            </Typography>
-                                            <Typography sx={{ fontSize: '28px', fontWeight: '700', color: '#1a1a1a', lineHeight: 1.1 }}>
-                                                {card.value}
-                                            </Typography>
-                                            <Typography sx={{ fontSize: '10px', color: card.color, fontWeight: '600', mt: 0.5 }}>
-                                                {viewLabel}
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{
-                                            width: 38, height: 38, borderRadius: '7px', bgcolor: card.bg,
-                                            border: `1px solid ${card.border}`,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        }}>
-                                            <Icon sx={{ color: card.color, fontSize: 20 }} />
-                                        </Box>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <Box sx={{ minWidth: 0 }}>
+                                        <Typography sx={{ fontSize: '11px', color: card.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                            {card.title}
+                                        </Typography>
+                                        <Typography sx={{ fontSize: '28px', fontWeight: 800, color: '#0F172A', lineHeight: 1.2, mt: 0.5 }}>
+                                            {card.value}
+                                        </Typography>
+                                        <Typography sx={{ fontSize: '10.5px', color: '#6B7280', fontWeight: 600, mt: 0.3 }}>
+                                            {viewLabel}
+                                        </Typography>
                                     </Box>
-                                </CardContent>
-                            </Card>
+                                    <Box sx={{
+                                        width: 44, height: 44, borderRadius: '7px', bgcolor: '#fff',
+                                        boxShadow: '0 1px 3px rgba(16,24,40,0.08)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, ml: 1,
+                                    }}>
+                                        <Icon sx={{ color: card.color, fontSize: 22 }} />
+                                    </Box>
+                                </Box>
+                            </Box>
                         </Grid>
                     );
                 })}
             </Grid>
 
             {/* ── Detailed Attendance Log ──────────────────────────────────── */}
-            <Card sx={{ border: '1px solid #E8E8E8', borderRadius: '7px', boxShadow: 'none' }}>
+            <Card sx={{ border: '1px solid #ECEBF5', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.05)' }}>
                 <CardContent>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                         <Typography sx={{ fontSize: '16px', fontWeight: '600' }}>
@@ -439,13 +426,13 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                             icon={<CalendarTodayIcon sx={{ fontSize: '13px !important' }} />}
                             label={`${filteredDetails.length} Staff · ${dateHeaders.length} Days`}
                             size="small"
-                            sx={{ bgcolor: '#E8EFFE', color: '#3457D5', fontWeight: '600', fontSize: '11px' }}
+                            sx={{ bgcolor: '#F1EEFE', color: '#7C5CFC', fontWeight: '600', fontSize: '11px' }}
                         />
                     </Box>
 
                     {isLoading ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-                            <CircularProgress size={30} sx={{ color: '#3457D5' }} />
+                            <CircularProgress size={30} sx={{ color: '#7C5CFC' }} />
                         </Box>
                     ) : filteredDetails.length === 0 ? (
                         <Box sx={{ textAlign: 'center', py: 6, color: '#999' }}>
@@ -462,9 +449,9 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                             }}>
                                 <Table size="small" sx={{ minWidth: 800 }}>
                                     <TableHead>
-                                        <TableRow sx={{ bgcolor: '#F9FAFB' }}>
+                                        <TableRow sx={{ bgcolor: '#F4F3FB' }}>
                                             <TableCell sx={{
-                                                position: 'sticky', left: 0, bgcolor: '#F9FAFB', zIndex: 2,
+                                                position: 'sticky', left: 0, bgcolor: '#F4F3FB', zIndex: 2,
                                                 borderRight: '2px solid #E8E8E8', fontWeight: '600',
                                                 fontSize: '11px', color: '#666', textTransform: 'uppercase', minWidth: 200,
                                             }}>
@@ -472,7 +459,7 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                                             </TableCell>
                                             {dateHeaders.map(dateStr => (
                                                 <TableCell key={dateStr} align="center" sx={{
-                                                    bgcolor: '#F9FAFB',
+                                                    bgcolor: '#F4F3FB',
                                                     fontWeight: '600', fontSize: '11px', minWidth: 72,
                                                     borderLeft: '1px solid #E8E8E8', py: 1,
                                                 }}>
@@ -494,7 +481,7 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                                                     borderRight: '2px solid #E8E8E8',
                                                 }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
-                                                        <Avatar sx={{ width: 34, height: 34, bgcolor: '#3457D5', fontSize: '12px', fontWeight: '700' }}>
+                                                        <Avatar sx={{ width: 34, height: 34, bgcolor: '#7C5CFC', fontSize: '12px', fontWeight: '700' }}>
                                                             {getInitials(staff.name)}
                                                         </Avatar>
                                                         <Box>

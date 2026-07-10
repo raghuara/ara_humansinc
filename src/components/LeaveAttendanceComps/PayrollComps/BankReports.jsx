@@ -34,7 +34,7 @@ const PRIMARY_LIGHT = '#F1EEFE';
 const PRIMARY_DARK = '#6246E0';
 const PRIMARY_BORDER = '#C9BEFB';
 
-const AVATAR_PALETTE = ['#0E7490', '#1D4ED8', '#C2410C', '#6246E0', '#1D4ED8', '#BE185D', '#A16207', '#0F766E'];
+const AVATAR_PALETTE = ['#0E7490', '#6D28D9', '#C2410C', '#6246E0', '#1D4ED8', '#BE185D', '#A16207', '#0F766E'];
 const avatarColorFor = (name = '') => {
     const code = (name.charCodeAt(0) || 0) + (name.charCodeAt(1) || 0);
     return AVATAR_PALETTE[code % AVATAR_PALETTE.length];
@@ -123,6 +123,11 @@ export default function BankReports() {
     const pendingAccounts = useMemo(
         () => employeeData.filter(e => !hasBankDetails(e)).length,
         [employeeData],
+    );
+
+    const visibleNetTotal = useMemo(
+        () => filteredData.reduce((s, e) => s + (Number(e.netSalary) || 0), 0),
+        [filteredData],
     );
 
     const coverage = stats.totalAccounts > 0
@@ -220,28 +225,28 @@ export default function BankReports() {
             label: 'Total Employees',
             value: stats.totalEmployees,
             sub: 'on payroll',
-            color: '#7C5CFC', bg: '#F1EEFE', border: '#C9BEFB',
+            color: '#7C5CFC', bg: '#F1EEFE',
             icon: PeopleAltOutlinedIcon,
         },
         {
             label: 'Verified Accounts',
             value: `${coverage}%`,
             sub: `${stats.verifiedAccounts} of ${stats.totalAccounts}`,
-            color: '#6246E0', bg: '#F3F0FE', border: '#C9BEFB',
+            color: '#16A34A', bg: '#DCFCE7',
             icon: CheckCircleIcon,
         },
         {
             label: 'Pending Setup',
             value: pendingAccounts,
             sub: 'awaiting bank info',
-            color: '#0EA5E9', bg: '#E0F2FE', border: '#BAE6FD',
+            color: '#F59E0B', bg: '#FFF7ED',
             icon: HourglassEmptyIcon,
         },
         {
             label: 'Total Net Payout',
             value: formatINR(stats.totalNetSalary),
             sub: 'monthly disbursement',
-            color: '#2563EB', bg: '#F3F0FE', border: '#C9BEFB',
+            color: '#0EA5E9', bg: '#E0F2FE',
             icon: PaidOutlinedIcon,
         },
     ];
@@ -255,26 +260,12 @@ export default function BankReports() {
             <Box sx={{
                 display: 'flex',
                 flexDirection: 'column',
-                bgcolor: '#F9FAFB',
-                borderRadius: '16px',
-                border: '1px solid #E5E7EB',
-                overflow: 'hidden',
                 minHeight: '88vh',
+                p: 2,
             }}>
                 {/* ─── Header ─────────────────────────────────────────────── */}
                 <Box sx={{
-                    position: "static",
-                    top: "60px",
-                    left: isExpanded ? "260px" : "80px",
-                    right: 0,
-                    backgroundColor: "transparent",
-                    px: 2,
-                    py: 1,
-                    borderBottom: "1px solid #ddd",
-                    borderTop: "none",
-                    zIndex: 1200,
-                    transition: "left 0.3s ease-in-out",
-                    overflow: 'hidden',
+                    pb: 2.5,
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -282,30 +273,11 @@ export default function BankReports() {
                     gap: 1.5,
                 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <IconButton
-                            onClick={() => navigate(-1)}
-                            sx={{
-                                width: 38, height: 38,
-                                bgcolor: '#F9FAFB',
-                                border: '1px solid #E5E7EB',
-                                borderRadius: '7px',
-                                '&:hover': { bgcolor: PRIMARY_LIGHT, borderColor: PRIMARY_BORDER },
-                            }}
-                        >
-                            <ArrowBackIcon sx={{ fontSize: 18, color: '#374151' }} />
-                        </IconButton>
-                        <Box sx={{
-                            width: 38, height: 38, borderRadius: '7px',
-                            bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                            <AccountBalanceIcon sx={{ color: PRIMARY, fontSize: 20 }} />
-                        </Box>
                         <Box>
-                            <Typography sx={{ fontSize: '16px', fontWeight: 800, color: '#111827', lineHeight: 1.1 }}>
+                            <Typography sx={{ fontSize: '24px', fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
                                 Employee Bank Details
                             </Typography>
-                            <Typography sx={{ fontSize: '11.5px', color: '#6B7280', mt: 0.3 }}>
+                            <Typography sx={{ fontSize: '13px', color: '#6B7280', mt: 0.3 }}>
                                 Manage payroll bank accounts and disbursement information
                             </Typography>
                         </Box>
@@ -360,17 +332,17 @@ export default function BankReports() {
                             onClick={handleExportBankData}
                             sx={{
                                 textTransform: 'none',
-                                background: 'linear-gradient(135deg, #7C5CFC 0%, #9B87FB 100%)', boxShadow: '0 10px 22px -8px rgba(124,92,252,0.5)',
-                                color: '#fff',
+                                bgcolor: '#F1EEFE',
+                                color: '#7C5CFC',
                                 borderRadius: '30px',
                                 fontSize: '12.5px',
                                 fontWeight: 700,
                                 px: 2.4, height: 34,
                                 boxShadow: 'none',
-                                border: '1.5px solid #0F172A',
+                                border: '1.5px solid #C9BEFB',
                                 '&:hover': {
-                                    bgcolor: '#6246E0',
-                                    borderColor: '#6246E0',
+                                    bgcolor: '#E7DFFC',
+                                    borderColor: '#C9BEFB',
                                     boxShadow: 'none',
                                 },
                             }}
@@ -381,7 +353,7 @@ export default function BankReports() {
                 </Box>
 
                 {/* ─── Body ───────────────────────────────────────────────── */}
-                <Box sx={{ flex: 1, pt: "14px", pb: 2, px: 2 }}>
+                <Box sx={{ flex: 1 }}>
 
                     {/* KPI Cards */}
                     <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -389,61 +361,60 @@ export default function BankReports() {
                             const Icon = card.icon;
                             return (
                                 <Grid size={{ xs: 12, sm: 6, md: 3 }} key={card.label}>
-                                    <Card sx={{
-                                        border: `1px solid ${card.border}`,
+                                    <Box sx={{
+                                        p: 2.5,
                                         borderRadius: '7px',
-                                        boxShadow: 'none',
                                         bgcolor: card.bg,
+                                        border: `1px solid ${card.color}22`,
+                                        boxShadow: '0 1px 3px rgba(16,24,40,0.06)',
                                         height: '100%',
                                         transition: 'transform 0.15s, box-shadow 0.15s',
                                         '&:hover': {
                                             transform: 'translateY(-2px)',
-                                            boxShadow: `0 6px 16px ${card.color}22`,
+                                            boxShadow: `0 8px 20px ${card.color}22`,
                                         },
                                     }}>
-                                        <CardContent sx={{ py: 1.8, '&:last-child': { pb: 1.8 } }}>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                    <Typography sx={{
-                                                        fontSize: '11px', color: card.color, fontWeight: 700,
-                                                        textTransform: 'uppercase', letterSpacing: 0.5,
-                                                    }}>
-                                                        {card.label}
-                                                    </Typography>
-                                                    <Typography sx={{
-                                                        fontSize: '24px', fontWeight: 800, color: '#111827',
-                                                        lineHeight: 1.2, mt: 0.5,
-                                                    }} noWrap>
-                                                        {card.value}
-                                                    </Typography>
-                                                    <Typography sx={{
-                                                        fontSize: '10.5px', color: '#6B7280', fontWeight: 600, mt: 0.4,
-                                                    }} noWrap>
-                                                        {card.sub}
-                                                    </Typography>
-                                                </Box>
-                                                <Box sx={{
-                                                    width: 38, height: 38, borderRadius: '7px',
-                                                    bgcolor: '#fff', border: `1px solid ${card.border}`,
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    flexShrink: 0, ml: 1,
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                <Typography sx={{
+                                                    fontSize: '11px', color: card.color, fontWeight: 700,
+                                                    textTransform: 'uppercase', letterSpacing: 0.5,
                                                 }}>
-                                                    <Icon sx={{ color: card.color, fontSize: 20 }} />
-                                                </Box>
+                                                    {card.label}
+                                                </Typography>
+                                                <Typography sx={{
+                                                    fontSize: '28px', fontWeight: 800, color: '#0F172A',
+                                                    lineHeight: 1.2, mt: 0.5,
+                                                }} noWrap>
+                                                    {card.value}
+                                                </Typography>
+                                                <Typography sx={{
+                                                    fontSize: '10.5px', color: '#6B7280', fontWeight: 600, mt: 0.4,
+                                                }} noWrap>
+                                                    {card.sub}
+                                                </Typography>
                                             </Box>
-                                        </CardContent>
-                                    </Card>
+                                            <Box sx={{
+                                                width: 44, height: 44, borderRadius: '7px',
+                                                bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                flexShrink: 0, ml: 1,
+                                            }}>
+                                                <Icon sx={{ color: card.color, fontSize: 22 }} />
+                                            </Box>
+                                        </Box>
+                                    </Box>
                                 </Grid>
                             );
                         })}
                     </Grid>
 
                     {/* Employee Bank Details Table */}
-                    <Card sx={{ border: '1px solid #E5E7EB', borderRadius: '7px', boxShadow: 'none', bgcolor: '#fff' }}>
+                    <Card sx={{ border: '1px solid #ECEBF5', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.05)', bgcolor: '#fff', overflow: 'hidden' }}>
                         <Box sx={{
-                            px: 2, py: 1.5,
-                            borderBottom: '1px solid #E5E7EB',
-                            bgcolor: '#fff',
+                            px: 2, py: 1.6,
+                            borderBottom: '1px solid #EAE7F7',
+                            bgcolor: '#F7F6FD',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
@@ -452,21 +423,21 @@ export default function BankReports() {
                         }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <Box sx={{
-                                    width: 28, height: 28, borderRadius: '7px',
-                                    bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
+                                    width: 32, height: 32, borderRadius: '9px',
+                                    bgcolor: '#fff', boxShadow: '0 1px 4px rgba(16,24,40,0.12)',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 }}>
-                                    <AccountBalanceIcon sx={{ fontSize: 16, color: PRIMARY }} />
+                                    <AccountBalanceIcon sx={{ fontSize: 17, color: PRIMARY }} />
                                 </Box>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 700, color: '#111827' }}>
+                                <Typography sx={{ fontSize: '14.5px', fontWeight: 800, color: '#0F172A' }}>
                                     Employee Bank Account Details
                                 </Typography>
                                 <Chip
                                     label={`${employeeData.length} employees`}
                                     size="small"
                                     sx={{
-                                        bgcolor: '#F3F4F6', color: '#374151',
-                                        fontWeight: 600, fontSize: '11px', height: 20,
+                                        bgcolor: PRIMARY_LIGHT, color: PRIMARY,
+                                        fontWeight: 700, fontSize: '11px', height: 20,
                                     }}
                                 />
                             </Box>
@@ -502,7 +473,7 @@ export default function BankReports() {
                         <TableContainer sx={{ }}>
                             <Table stickyHeader size="small">
                                 <TableHead>
-                                    <TableRow sx={{ bgcolor: PRIMARY_LIGHT }}>
+                                    <TableRow>
                                         {[
                                             'S.No', 'Employee', 'Net Salary', 'Bank Name',
                                             'Account Number', 'IFSC Code', 'Branch', 'Status', 'Actions',
@@ -510,12 +481,12 @@ export default function BankReports() {
                                             <TableCell
                                                 key={header}
                                                 sx={{
-                                                    fontWeight: 700, fontSize: '10px',
-                                                    color: PRIMARY_DARK,
-                                                    bgcolor: PRIMARY_LIGHT,
-                                                    textTransform: 'uppercase', letterSpacing: 0.6,
-                                                    whiteSpace: 'nowrap', py: 1.3,
-                                                    borderBottom: `1px solid ${PRIMARY_BORDER}`,
+                                                    fontWeight: 700, fontSize: '10.5px',
+                                                    color: '#6E6B99',
+                                                    bgcolor: '#F4F3FB',
+                                                    textTransform: 'uppercase', letterSpacing: 0.7,
+                                                    whiteSpace: 'nowrap', py: 1.5,
+                                                    borderBottom: '1px solid #E8E6F3',
                                                 }}
                                             >
                                                 {header}
@@ -559,17 +530,17 @@ export default function BankReports() {
                                             <TableRow
                                                 key={emp.id}
                                                 sx={{
-                                                    '&:hover': { bgcolor: PRIMARY_LIGHT },
-                                                    borderBottom: '1px solid #F3F4F6',
+                                                    bgcolor: idx % 2 ? '#FBFAFE' : '#fff',
+                                                    '&:hover': { bgcolor: '#F5F4FC' },
                                                     transition: 'background-color 0.15s',
                                                 }}
                                             >
-                                                <TableCell sx={{ width: 50, borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ width: 50, borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     <Typography sx={{ fontSize: '12px', color: '#9CA3AF', fontWeight: 500 }}>
                                                         {idx + 1}
                                                     </Typography>
                                                 </TableCell>
-                                                <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
                                                         <Avatar sx={{
                                                             width: 32, height: 32,
@@ -593,18 +564,18 @@ export default function BankReports() {
                                                         </Box>
                                                     </Box>
                                                 </TableCell>
-                                                <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     <Box sx={{
                                                         display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                                                        px: 1, py: 0.4, borderRadius: '7px',
-                                                        bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
+                                                        px: 1.1, py: 0.5, borderRadius: '7px',
+                                                        bgcolor: '#EFECFE', border: '1px solid #DDD3FB',
                                                     }}>
-                                                        <Typography sx={{ fontSize: '13px', fontWeight: 800, color: PRIMARY_DARK }}>
+                                                        <Typography sx={{ fontSize: '13px', fontWeight: 800, color: '#5B21B6' }}>
                                                             {formatINR(emp.netSalary)}
                                                         </Typography>
                                                     </Box>
                                                 </TableCell>
-                                                <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     {emp.bankName ? (
                                                         <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>
                                                             {emp.bankName}
@@ -615,7 +586,7 @@ export default function BankReports() {
                                                         </Typography>
                                                     )}
                                                 </TableCell>
-                                                <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     {emp.accountNumber ? (
                                                         <Typography sx={{ fontSize: '12.5px', fontFamily: 'monospace', fontWeight: 600, color: '#374151' }}>
                                                             {emp.accountNumber}
@@ -624,14 +595,14 @@ export default function BankReports() {
                                                         <Typography sx={{ fontSize: '12px', color: '#CBD5E1' }}>—</Typography>
                                                     )}
                                                 </TableCell>
-                                                <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     {emp.ifsc ? (
                                                         <Chip
                                                             label={emp.ifsc}
                                                             size="small"
                                                             sx={{
-                                                                bgcolor: '#F3F0FE', color: '#1D4ED8',
-                                                                border: '1px solid #C9BEFB',
+                                                                bgcolor: '#EEF2FF', color: '#4F46E5',
+                                                                border: '1px solid #DDE0FB',
                                                                 fontWeight: 700, fontSize: '10.5px', height: 22,
                                                                 fontFamily: 'monospace',
                                                             }}
@@ -640,7 +611,7 @@ export default function BankReports() {
                                                         <Typography sx={{ fontSize: '12px', color: '#CBD5E1' }}>—</Typography>
                                                     )}
                                                 </TableCell>
-                                                <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     {emp.branch ? (
                                                         <Typography sx={{ fontSize: '12.5px', color: '#374151', fontWeight: 500 }}>
                                                             {emp.branch}
@@ -649,7 +620,7 @@ export default function BankReports() {
                                                         <Typography sx={{ fontSize: '12px', color: '#CBD5E1' }}>—</Typography>
                                                     )}
                                                 </TableCell>
-                                                <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     <Chip
                                                         size="small"
                                                         icon={verified
@@ -658,14 +629,14 @@ export default function BankReports() {
                                                         label={verified ? 'Verified' : 'Pending'}
                                                         sx={{
                                                             height: 22, fontSize: '10.5px', fontWeight: 700,
-                                                            bgcolor: verified ? '#F1EEFE' : '#E0F2FE',
+                                                            bgcolor: verified ? '#F1EEFE' : '#FFFBEB',
                                                             color: verified ? '#6246E0' : '#B45309',
-                                                            border: `1px solid ${verified ? '#C9BEFB' : '#BAE6FD'}`,
+                                                            border: `1px solid ${verified ? '#C9BEFB' : '#FDE68A'}`,
                                                             '& .MuiChip-icon': { color: 'inherit', ml: '6px' },
                                                         }}
                                                     />
                                                 </TableCell>
-                                                <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 1.2 }}>
+                                                <TableCell sx={{ borderBottom: '1px solid #EEF0F6', py: 1.4 }}>
                                                     <Tooltip arrow title={verified ? 'Edit bank details' : 'Add bank details'}>
                                                         <IconButton
                                                             size="small"
@@ -674,7 +645,7 @@ export default function BankReports() {
                                                                 bgcolor: verified ? '#F3F0FE' : '#F1EEFE',
                                                                 borderRadius: '7px',
                                                                 border: `1px solid ${verified ? '#C9BEFB' : '#C9BEFB'}`,
-                                                                '&:hover': { bgcolor: verified ? '#DBEAFE' : '#DBEAFE' },
+                                                                '&:hover': { bgcolor: '#E7DFFC' },
                                                             }}
                                                         >
                                                             {verified
@@ -689,6 +660,23 @@ export default function BankReports() {
                                 </TableBody>
                             </Table>
                         </TableContainer>
+
+                        {/* Totals footer */}
+                        {!isLoading && filteredData.length > 0 && (
+                            <Box sx={{
+                                px: 2, py: 1.5, borderTop: '1px solid #EAE7F7', bgcolor: '#F7F6FD',
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                flexWrap: 'wrap', gap: 1.5,
+                            }}>
+                                <Typography sx={{ fontSize: '12px', color: '#6B7280', fontWeight: 600 }}>
+                                    Showing <Box component="span" sx={{ color: '#5B21B6', fontWeight: 800 }}>{filteredData.length}</Box> of {employeeData.length} accounts
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.6 }}>
+                                    <Typography sx={{ fontSize: '11px', color: '#6D28D9', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>Total Net Payout</Typography>
+                                    <Typography sx={{ fontSize: '14px', fontWeight: 800, color: '#5B21B6' }}>{formatINR(visibleNetTotal)}</Typography>
+                                </Box>
+                            </Box>
+                        )}
                     </Card>
                 </Box>
             </Box>
@@ -723,10 +711,10 @@ export default function BankReports() {
                                 : <EditIcon sx={{ color: PRIMARY, fontSize: 20 }} />}
                         </Box>
                         <Box>
-                            <Typography sx={{ fontSize: '16px', fontWeight: 800, color: '#111827', lineHeight: 1.1 }}>
+                            <Typography sx={{ fontSize: '24px', fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
                                 {isAddMode ? 'Add Bank Account Details' : 'Edit Bank Account Details'}
                             </Typography>
-                            <Typography sx={{ fontSize: '11.5px', color: '#6B7280', mt: 0.3 }}>
+                            <Typography sx={{ fontSize: '13px', color: '#6B7280', mt: 0.3 }}>
                                 {isAddMode
                                     ? 'Set up payroll bank account for this employee'
                                     : 'Update the bank account information used for salary disbursement'}
@@ -756,7 +744,7 @@ export default function BankReports() {
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                                 <Box sx={{
                                     width: 24, height: 24, borderRadius: '7px',
-                                    bgcolor: '#F3F0FE', border: '1px solid #C9BEFB',
+                                    bgcolor: '#F3F0FE', border: '1px solid #BFDBFE',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 }}>
                                     <BadgeOutlinedIcon sx={{ fontSize: 14, color: '#6246E0' }} />
@@ -895,7 +883,7 @@ export default function BankReports() {
 
                         <Box sx={{
                             mt: 2, p: 1.2, borderRadius: '7px',
-                            bgcolor: '#E0F2FE', border: '1px solid #BAE6FD',
+                            bgcolor: '#FFFBEB', border: '1px solid #FDE68A',
                             display: 'flex', alignItems: 'flex-start', gap: 1,
                         }}>
                             <AccountBalanceWalletIcon sx={{ fontSize: 16, color: '#B45309', mt: 0.1 }} />

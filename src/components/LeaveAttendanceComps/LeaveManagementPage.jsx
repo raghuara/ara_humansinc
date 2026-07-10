@@ -317,10 +317,10 @@ export default function LeaveManagementPage({
 
     // ─── KPI cards ──────────────────────────────────────────────────────────
     const kpiCards = [
-        { label: 'Total Leaves', value: stats.totalLeavesThisMonth ?? 0, sub: 'This Month',                              color: '#6246E0', bg: '#F3F0FE', border: '#C9BEFB', icon: EventIcon },
-        { label: 'Approved',     value: stats.approved ?? 0,             sub: `${stats.approvedPercentOfTotal ?? 0}% of total`, color: PRIMARY,   bg: PRIMARY_LIGHT, border: PRIMARY_BORDER, icon: CheckCircleIcon },
-        { label: 'Pending',      value: stats.pending ?? 0,              sub: 'Needs Review',                            color: '#0EA5E9', bg: '#E0F2FE', border: '#BAE6FD', icon: PendingIcon },
-        { label: 'Rejected',     value: stats.rejected ?? 0,             sub: 'Declined',                                color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', icon: CancelIcon },
+        { label: 'Total Leaves', value: stats.totalLeavesThisMonth ?? 0, sub: 'This Month',                                     color: '#7C5CFC', bg: '#F1EEFE', icon: EventIcon },
+        { label: 'Approved',     value: stats.approved ?? 0,             sub: `${stats.approvedPercentOfTotal ?? 0}% of total`, color: '#16A34A', bg: '#DCFCE7', icon: CheckCircleIcon },
+        { label: 'Pending',      value: stats.pending ?? 0,              sub: 'Needs Review',                                   color: '#F59E0B', bg: '#FFF7ED', icon: PendingIcon },
+        { label: 'Rejected',     value: stats.rejected ?? 0,             sub: 'Declined',                                       color: '#E11D48', bg: '#FEE2E2', icon: CancelIcon },
     ];
 
     // ─── Status & leave-type chip renderers ────────────────────────────────
@@ -358,53 +358,34 @@ export default function LeaveManagementPage({
         <>
             <SnackBar open={open} color={color} setOpen={setOpen} status={status} message={message} />
 
-            <Box sx={{
-                border: isEmbedded ? 'none' : '1px solid #E5E7EB',
-                borderRadius: isEmbedded ? '0' : '20px',
-                p: isEmbedded ? 0 : 2,
-                height: isEmbedded ? 'auto' : '86vh',
-                overflow: isEmbedded ? 'visible' : 'auto',
-                bgcolor: isEmbedded ? 'transparent' : '#F9FAFB',
-            }}>
+            <Box sx={{ p: isEmbedded ? 0 : 2 }}>
                 {/* Standalone Header */}
                 {!isEmbedded && (
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <IconButton onClick={() => navigate(-1)} sx={{ width: 32, height: 32 }}>
-                                <ArrowBackIcon sx={{ fontSize: 18, color: '#000' }} />
-                            </IconButton>
-                            <Box sx={{
-                                width: 36, height: 36, borderRadius: '7px',
-                                bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
-                                <EventIcon sx={{ color: PRIMARY, fontSize: 20 }} />
-                            </Box>
-                            <Box>
-                                <Typography sx={{ fontSize: '20px', fontWeight: 700, color: '#111827', lineHeight: 1.1 }}>
-                                    Leave Management
-                                </Typography>
-                                <Typography sx={{ fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>
-                                    Manage staff leave applications and approvals
-                                </Typography>
-                            </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, mb: 2.5, flexWrap: 'wrap', gap: 1.5 }}>
+                        <Box>
+                            <Typography sx={{ fontSize: 24, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
+                                Leave Management
+                            </Typography>
+                            <Typography sx={{ fontSize: 13, color: '#6B7280', mt: 0.3 }}>
+                                Manage staff leave applications and approvals
+                            </Typography>
                         </Box>
                         <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Button startIcon={<AddIcon />} variant="contained" onClick={handleApplyLeave}
+                            <Button startIcon={<AddIcon />} onClick={handleApplyLeave}
                                 sx={{
-                                    textTransform: 'none', borderRadius: '50px',
-                                    bgcolor: PRIMARY, color: '#fff', fontSize: '13px', fontWeight: 700, px: 2.5,
-                                    boxShadow: `0 2px 6px ${PRIMARY}33`,
-                                    '&:hover': { bgcolor: PRIMARY_DARK, boxShadow: `0 4px 12px ${PRIMARY}55` },
+                                    textTransform: 'none', borderRadius: '7px',
+                                    bgcolor: PRIMARY, color: '#fff', fontSize: 12.5, fontWeight: 700, px: 2.2, height: 42,
+                                    boxShadow: `0 2px 6px ${PRIMARY}40`,
+                                    '&:hover': { bgcolor: PRIMARY_DARK },
                                 }}>
                                 Apply Leave
                             </Button>
-                            <Button startIcon={<FileDownloadIcon />} variant="outlined"
+                            <Button startIcon={<FileDownloadIcon />}
                                 sx={{
-                                    textTransform: 'none', borderRadius: '50px',
-                                    border: '1px solid #E5E7EB', color: '#374151',
-                                    fontSize: '13px', fontWeight: 600, px: 2.5,
-                                    '&:hover': { borderColor: '#D1D5DB', bgcolor: '#F9FAFB' },
+                                    textTransform: 'none', borderRadius: '7px',
+                                    color: '#334155', bgcolor: '#F1F5F9',
+                                    fontSize: 12.5, fontWeight: 700, px: 2, height: 42,
+                                    '&:hover': { bgcolor: '#E2E8F0' },
                                 }}>
                                 Export
                             </Button>
@@ -493,36 +474,34 @@ export default function LeaveManagementPage({
                                     const Icon = card.icon;
                                     return (
                                         <Grid size={{ xs: 12, sm: 6, md: 3 }} key={card.label}>
-                                            <Card sx={{
-                                                border: `1px solid ${card.border}`,
-                                                borderRadius: '7px', boxShadow: 'none',
-                                                bgcolor: card.bg, height: '100%',
+                                            <Box sx={{
+                                                p: 2.5, borderRadius: '7px', bgcolor: card.bg,
+                                                border: `1px solid ${card.color}22`,
+                                                boxShadow: '0 1px 3px rgba(16,24,40,0.06)', height: '100%',
                                                 transition: 'transform 0.15s, box-shadow 0.15s',
-                                                '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 6px 16px ${card.color}22` },
+                                                '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 8px 20px ${card.color}22` },
                                             }}>
-                                                <CardContent sx={{ py: 1.8, '&:last-child': { pb: 1.8 } }}>
-                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                        <Box>
-                                                            <Typography sx={{ fontSize: '11px', color: card.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                                                {card.label}
-                                                            </Typography>
-                                                            <Typography sx={{ fontSize: '28px', fontWeight: 800, color: '#111827', lineHeight: 1.2, mt: 0.5 }}>
-                                                                {card.value}
-                                                            </Typography>
-                                                            <Typography sx={{ fontSize: '10px', color: card.color, fontWeight: 600, mt: 0.4 }}>
-                                                                {card.sub}
-                                                            </Typography>
-                                                        </Box>
-                                                        <Box sx={{
-                                                            width: 38, height: 38, borderRadius: '7px',
-                                                            bgcolor: '#fff', border: `1px solid ${card.border}`,
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        }}>
-                                                            <Icon sx={{ color: card.color, fontSize: 20 }} />
-                                                        </Box>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                    <Box sx={{ minWidth: 0 }}>
+                                                        <Typography sx={{ fontSize: '11px', color: card.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                                            {card.label}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '28px', fontWeight: 800, color: '#0F172A', lineHeight: 1.2, mt: 0.5 }}>
+                                                            {card.value}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '10.5px', color: '#6B7280', fontWeight: 600, mt: 0.3 }}>
+                                                            {card.sub}
+                                                        </Typography>
                                                     </Box>
-                                                </CardContent>
-                                            </Card>
+                                                    <Box sx={{
+                                                        width: 44, height: 44, borderRadius: '7px',
+                                                        bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, ml: 1,
+                                                    }}>
+                                                        <Icon sx={{ color: card.color, fontSize: 22 }} />
+                                                    </Box>
+                                                </Box>
+                                            </Box>
                                         </Grid>
                                     );
                                 })}

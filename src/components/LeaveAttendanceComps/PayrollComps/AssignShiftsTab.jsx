@@ -191,14 +191,9 @@ export default function AssignShiftsTab({ shifts = [], academicYear, showSnack }
 
     return (
         <Box>
-            {/* Header */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-                <Box>
-                    <Typography sx={{ fontSize: 17, fontWeight: 800, color: '#1a1a1a' }}>Assign Shifts</Typography>
-                    <Typography sx={{ fontSize: 12, color: '#6B7280' }}>
-                        Assign each staff member to a shift{academicYear ? ` for ${academicYear}` : ''}. Move them anytime they switch shifts.
-                    </Typography>
-                </Box>
+            {/* Header — the page title lives in the standalone header; here we only
+                surface the assignment progress widget on the right. */}
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, py: 1, borderRadius: '7px', border: '1px solid #E5E7EB', bgcolor: '#fff', minWidth: 190 }}>
                     <Box sx={{ position: 'relative', width: 38, height: 38, flexShrink: 0 }}>
                         <CircularProgress variant="determinate" value={100} size={38} thickness={4} sx={{ color: '#EEF0F3', position: 'absolute' }} />
@@ -285,7 +280,7 @@ export default function AssignShiftsTab({ shifts = [], academicYear, showSnack }
                     <Button
                         variant="contained" disableElevation startIcon={<GroupAddRoundedIcon />}
                         onClick={() => { setAssignPicked([]); setAssignSearch(''); setAssignOpen(true); }}
-                        sx={{ textTransform: 'none', fontSize: 12.5, fontWeight: 700, borderRadius: '7px', height: 38, bgcolor: tabAccent.color, '&:hover': { bgcolor: tabAccent.color, filter: 'brightness(0.92)' } }}
+                        sx={{ textTransform: 'none', fontSize: 12.5, fontWeight: 700, borderRadius: '7px', height: 38, bgcolor: tabAccent.color, color: '#fff', '& .MuiButton-startIcon': { color: '#fff' }, '&:hover': { bgcolor: tabAccent.color, color: '#fff', filter: 'brightness(0.92)' } }}
                     >
                         Assign Staff
                     </Button>
@@ -458,7 +453,7 @@ export default function AssignShiftsTab({ shifts = [], academicYear, showSnack }
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button onClick={() => setAssignOpen(false)} sx={{ textTransform: 'none', borderRadius: '7px', color: '#374151', border: '1px solid #D1D5DB', fontSize: 12.5 }}>Cancel</Button>
                         <Button onClick={confirmAssign} disabled={assignPicked.length === 0} variant="contained" disableElevation
-                            sx={{ textTransform: 'none', borderRadius: '7px', fontWeight: 700, fontSize: 12.5, bgcolor: tabAccent.color, '&:hover': { bgcolor: tabAccent.color, filter: 'brightness(0.92)' } }}>
+                            sx={{ textTransform: 'none', borderRadius: '7px', fontWeight: 700, fontSize: 12.5, bgcolor: tabAccent.color, color: '#fff', '&.Mui-disabled': { color: 'rgba(255,255,255,0.7)' }, '&:hover': { bgcolor: tabAccent.color, color: '#fff', filter: 'brightness(0.92)' } }}>
                             Assign {assignPicked.length || ''}
                         </Button>
                     </Box>
