@@ -23,9 +23,14 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
+import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded';
+import VerifiedRoundedIcon from '@mui/icons-material/VerifiedRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectEmployees, updateEmployee, resignEmployee, reactivateEmployee, removeEmployee } from '../redux/slices/employeesSlice';
+import { selectDepartmentNames, selectDesignationNames } from '../redux/slices/orgSlice';
+import { selectDocsForEmployee, selectRequests } from '../redux/slices/documentsSlice';
+import { openFile, downloadFile, fmtSize, fileKind } from '../utils/fileStore';
 
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
@@ -35,8 +40,6 @@ const tonalBtn = { bgcolor: PRIMARY_LIGHT, color: PRIMARY, border: `1px solid ${
 const solidBtn = { bgcolor: PRIMARY, color: '#fff', fontWeight: 700, borderRadius: '7px', boxShadow: `0 2px 6px ${PRIMARY}40`, textTransform: 'none', '&:hover': { bgcolor: '#6246E0' } };
 const field = { '& .MuiOutlinedInput-root': { borderRadius: '7px', fontSize: 14, bgcolor: '#F8FAFC', '& fieldset': { borderColor: '#E5E7EB' }, '&.Mui-focused fieldset': { borderColor: PRIMARY, borderWidth: 1.5 } } };
 
-const DEPARTMENTS = ['Engineering', 'Sales', 'Design', 'Human Resources', 'Finance', 'Operations', 'Support', 'Marketing'];
-const DESIGNATIONS = ['Software Engineer', 'Senior Engineer', 'Team Lead', 'Manager', 'Executive', 'Analyst', 'Associate', 'Director'];
 const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
 const MARITAL = ['Single', 'Married', 'Divorced', 'Widowed'];
 const BLOOD = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
@@ -68,8 +71,9 @@ const SECTIONS = [
         id: 'employment', title: 'Employment Information', icon: WorkRoundedIcon, fields: [
             { k: 'dateOfJoining', label: 'Date of Joining', type: 'date' },
             { k: 'employmentType', label: 'Employment Type', type: 'select', options: EMP_TYPES },
-            { k: 'department', label: 'Department', type: 'select', options: DEPARTMENTS },
-            { k: 'designation', label: 'Designation', type: 'select', options: DESIGNATIONS },
+            // Options come from the Organisation masters at render time.
+            { k: 'department', label: 'Department', type: 'select', options: [] },
+            { k: 'designation', label: 'Designation', type: 'select', options: [] },
             { k: 'shift', label: 'Shift', type: 'select', options: SHIFTS },
             { k: 'probationPeriod', label: 'Probation Period (months)' },
             { k: 'confirmationDate', label: 'Confirmation Date', type: 'date' },
@@ -149,6 +153,12 @@ export default function EmployeeDetailPage() {
     const dispatch = useDispatch();
     const emp = useSelector((s) => s.employees.employees.find((e) => String(e.id) === String(id)));
 
+    // Masters feed the employment dropdowns; documents feed the folder below.
+    const departmentNames = useSelector(selectDepartmentNames);
+    const designationNames = useSelector(selectDesignationNames);
+    const approvedDocs = useSelector(selectDocsForEmployee(emp?.employeeId || ''));
+    const requests = useSelector(selectRequests);
+
     const [mode, setMode] = useState('view');
     const [form, setForm] = useState(null);
     const [resignOpen, setResignOpen] = useState(false);
@@ -201,7 +211,24 @@ export default function EmployeeDetailPage() {
     };
 
     const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
-    const documents = emp.documents && typeof emp.documents === 'object' ? Object.entries(emp.documents) : [];
+
+    // Files attached during onboarding — kept for records created before the
+    // document module existed.
+    const legacyDocs = emp.documents && typeof emp.documents === 'object' ? Object.entries(emp.documents) : [];
+
+    // Anything management has asked this person for that hasn't been approved yet.
+    const outstanding = requests.flatMap((r) => {
+        const t = r.targets.find((x) => x.employeeId === emp.employeeId);
+        return t && t.status !== 'approved' ? [{ title: r.title, dueDate: r.dueDate, status: t.status, reason: t.reason }] : [];
+    });
+
+    const OUTSTANDING_TONE = {
+        pending: { label: 'Awaiting upload', color: '#B45309', bg: '#FFF7ED' },
+        submitted: { label: 'Submitted — under review', color: '#0369A1', bg: '#E0F2FE' },
+        rejected: { label: 'Rejected — re-upload asked', color: '#E11D48', bg: '#FEE2E2' },
+    };
+
+    const openDoc = (key) => { if (!openFile(key)) setSnack('That file was uploaded in an earlier session, so there is nothing to preview here.'); };
 
     return (
         <Box sx={{ p: 2 }}>
@@ -276,6 +303,16 @@ export default function EmployeeDetailPage() {
                         <Grid container spacing={mode === 'edit' ? 2 : 2.5}>
                             {sec.fields.map((f) => {
                                 const raw = mode === 'edit' ? form[f.k] : resolve(emp, f.k);
+                                // Department / designation are driven by the Organisation
+                                // masters. The value already saved is kept in the list even
+                                // if that master was since renamed or removed, so editing
+                                // another field can't silently blank it.
+                                let options = f.options;
+                                if (f.k === 'department') options = departmentNames;
+                                if (f.k === 'designation') options = designationNames;
+                                if ((f.k === 'department' || f.k === 'designation') && raw && !options.includes(raw)) {
+                                    options = [...options, raw];
+                                }
                                 return (
                                     <Grid size={{ xs: 12, sm: 6, md: 4 }} key={f.k}>
                                         <Label>{f.label}</Label>
@@ -283,7 +320,7 @@ export default function EmployeeDetailPage() {
                                             f.type === 'select' ? (
                                                 <TextField select fullWidth size="small" value={raw || ''} onChange={setF(f.k)} sx={field}>
                                                     <MenuItem value=""><em>—</em></MenuItem>
-                                                    {f.options.map((o) => <MenuItem key={o} value={o} sx={{ fontSize: 13.5 }}>{o}</MenuItem>)}
+                                                    {options.map((o) => <MenuItem key={o} value={o} sx={{ fontSize: 13.5 }}>{o}</MenuItem>)}
                                                 </TextField>
                                             ) : (
                                                 <TextField fullWidth size="small" type={f.type === 'date' ? 'date' : 'text'} value={raw || ''} onChange={setF(f.k)} sx={field} slotProps={f.type === 'date' ? { inputLabel: { shrink: true } } : undefined} />
@@ -300,24 +337,85 @@ export default function EmployeeDetailPage() {
                     </SectionCard>
                 ))}
 
-                {/* Documents (view only) */}
+                {/* Documents — approved files only. A submission reaches this card
+                    once management approves it in Documents → Approvals. */}
                 <SectionCard icon={FolderRoundedIcon} title="Documents">
-                    {documents.length ? (
+                    {/* Still owed to management */}
+                    {outstanding.length > 0 && (
+                        <Box sx={{ mb: 2.2, p: 1.6, borderRadius: '9px', bgcolor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                            <Stack direction="row" spacing={0.8} sx={{ alignItems: 'center', mb: 1 }}>
+                                <PendingActionsRoundedIcon sx={{ fontSize: 17, color: '#B45309' }} />
+                                <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#B45309', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                                    Requested — not yet in the record ({outstanding.length})
+                                </Typography>
+                            </Stack>
+                            <Stack spacing={0.8}>
+                                {outstanding.map((o) => {
+                                    const tone = OUTSTANDING_TONE[o.status] || OUTSTANDING_TONE.pending;
+                                    return (
+                                        <Stack key={o.title} direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#78350F' }}>{o.title}</Typography>
+                                            <Chip label={tone.label} size="small" sx={{ height: 19, fontSize: 10, fontWeight: 700, bgcolor: tone.bg, color: tone.color }} />
+                                            {o.dueDate && <Typography sx={{ fontSize: 11.5, color: '#B45309' }}>due {fmtDate(o.dueDate)}</Typography>}
+                                            {o.status === 'rejected' && o.reason && <Typography sx={{ fontSize: 11.5, color: '#E11D48', fontStyle: 'italic' }}>“{o.reason}”</Typography>}
+                                        </Stack>
+                                    );
+                                })}
+                            </Stack>
+                        </Box>
+                    )}
+
+                    {/* Approved and filed */}
+                    {approvedDocs.length > 0 ? (
                         <Grid container spacing={1.5}>
-                            {documents.map(([name, file]) => (
-                                <Grid size={{ xs: 12, sm: 6 }} key={name}>
-                                    <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', p: 1.3, borderRadius: '7px', border: '1px solid #EEF1F6', bgcolor: '#F8FAFC' }}>
-                                        <Box sx={{ minWidth: 0 }}>
-                                            <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }} noWrap>{name}</Typography>
-                                            <Typography sx={{ fontSize: 10.5, color: PRIMARY }} noWrap>{String(file)}</Typography>
-                                        </Box>
-                                        <DownloadRoundedIcon sx={{ fontSize: 18, color: '#94A3B8' }} />
-                                    </Stack>
-                                </Grid>
-                            ))}
+                            {approvedDocs.map((d) => {
+                                const kind = fileKind(d.fileName);
+                                return (
+                                    <Grid size={{ xs: 12, sm: 6 }} key={d.id}>
+                                        <Stack direction="row" spacing={1.3} sx={{ alignItems: 'center', p: 1.4, borderRadius: '9px', border: '1px solid #EEF1F6', bgcolor: '#F8FAFC', '&:hover': { borderColor: PRIMARY_BORDER, bgcolor: PRIMARY_LIGHT } }}>
+                                            <Box sx={{ width: 38, height: 38, borderRadius: '8px', bgcolor: kind.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                <Typography sx={{ fontSize: 10, fontWeight: 800, color: kind.color }}>{kind.label}</Typography>
+                                            </Box>
+                                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center' }}>
+                                                    <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }} noWrap>{d.name}</Typography>
+                                                    <Tooltip arrow title={`Approved by ${d.approvedBy} on ${fmtDate(d.approvedOn)}`}>
+                                                        <VerifiedRoundedIcon sx={{ fontSize: 15, color: '#16A34A' }} />
+                                                    </Tooltip>
+                                                </Stack>
+                                                <Typography sx={{ fontSize: 10.5, color: '#98A0AE' }} noWrap>{d.fileName} · {fmtSize(d.fileSize)}</Typography>
+                                            </Box>
+                                            <Tooltip arrow title="View"><IconButton size="small" onClick={() => openDoc(d.fileKey)} sx={{ color: '#94A3B8', '&:hover': { color: PRIMARY } }}><VisibilityRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip>
+                                            <Tooltip arrow title="Download"><IconButton size="small" onClick={() => { if (!downloadFile(d.fileKey, d.fileName)) setSnack('That file was uploaded in an earlier session, so there is nothing to download here.'); }} sx={{ color: '#94A3B8', '&:hover': { color: PRIMARY } }}><DownloadRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip>
+                                        </Stack>
+                                    </Grid>
+                                );
+                            })}
                         </Grid>
                     ) : (
-                        <Typography sx={{ fontSize: 13, color: '#C4C9D4', fontStyle: 'italic' }}>No documents uploaded</Typography>
+                        <Typography sx={{ fontSize: 13, color: '#C4C9D4', fontStyle: 'italic' }}>
+                            No approved documents yet. Request one from Documents → Requests; it lands here once you approve it.
+                        </Typography>
+                    )}
+
+                    {/* Onboarding attachments (pre-dating the document module) */}
+                    {legacyDocs.length > 0 && (
+                        <Box sx={{ mt: 2.2, pt: 1.8, borderTop: '1px dashed #E6EAF1' }}>
+                            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.4, mb: 1.2 }}>Attached during onboarding</Typography>
+                            <Grid container spacing={1.5}>
+                                {legacyDocs.map(([name, file]) => (
+                                    <Grid size={{ xs: 12, sm: 6 }} key={name}>
+                                        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', p: 1.3, borderRadius: '7px', border: '1px solid #EEF1F6', bgcolor: '#F8FAFC' }}>
+                                            <Box sx={{ minWidth: 0 }}>
+                                                <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }} noWrap>{name}</Typography>
+                                                <Typography sx={{ fontSize: 10.5, color: PRIMARY }} noWrap>{String(file)}</Typography>
+                                            </Box>
+                                            <DownloadRoundedIcon sx={{ fontSize: 18, color: '#94A3B8' }} />
+                                        </Stack>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        </Box>
                     )}
                 </SectionCard>
             </Stack>

@@ -12,24 +12,21 @@ import RolesPage from './pages/RolesPage';
 import RoleUsersPage from './pages/RoleUsersPage';
 import RoleAccessPage from './pages/RoleAccessPage';
 
-// Payroll screens
-import SalaryStructures from './components/LeaveAttendanceComps/PayrollComps/SalaryStructures';
-import ComplianceSettings from './components/LeaveAttendanceComps/PayrollComps/ComplianceSettings';
-import BankReports from './components/LeaveAttendanceComps/PayrollComps/BankReports';
+// Inbox & documents
+import InboxPage from './pages/InboxPage';
+import DocumentsPage from './pages/DocumentsPage';
+
+// Payroll — the monthly run
+import MarkSalaryCreditedPage from './components/LeaveAttendanceComps/PayrollComps/MarkSalaryCreditedPage';
 import SalaryRegister from './components/LeaveAttendanceComps/PayrollComps/SalaryRegister';
 import ApprovePayroll from './components/LeaveAttendanceComps/PayrollComps/ApprovePayroll';
-import MarkSalaryCreditedPage from './components/LeaveAttendanceComps/PayrollComps/MarkSalaryCreditedPage';
-import SalaryAdvancesPage from './pages/SalaryAdvancesPage';
-import OvertimePage from './pages/OvertimePage';
+import PayAdjustmentsPage from './pages/PayAdjustmentsPage';
 
-// Leave & attendance screens
-import StaffAttendanceOverviewPage from './components/LeaveAttendanceComps/StaffAttendanceOverviewPage';
-import AddStaffAttendancePage from './components/LeaveAttendanceComps/AddStaffAttendancePage';
-import LeaveManagementPage from './components/LeaveAttendanceComps/LeaveManagementPage';
-import AttendanceReportsPage from './components/LeaveAttendanceComps/AttendanceReportsPage';
-
-// Leave policy master (tabbed)
-import LeaveMasterScreen from './components/LeaveAttendanceComps/PayrollComps/LeaveMasterScreen';
+// Tabbed hosts — each groups several existing pages under one sidebar entry.
+import AttendanceLeavePage from './pages/AttendanceLeavePage';
+import OrganisationPage from './pages/OrganisationPage';
+import PayrollSetupPage from './pages/PayrollSetupPage';
+import LeavePolicyPage from './pages/LeavePolicyPage';
 
 // Guards a route group: sends unauthenticated users to /login.
 function ProtectedRoute() {
@@ -43,6 +40,33 @@ function PublicOnlyRoute({ children }) {
     return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
 }
 
+// ── Legacy paths ────────────────────────────────────────────────────────────
+// Every page that moved into a tab keeps its old URL alive as a redirect.
+// Bookmarks, the dashboard's quick actions and the Inbox deep links all point
+// at these, and they would fail silently otherwise. Safe to delete once nothing
+// links to them — but they cost nothing to keep.
+const MOVED = [
+    ['salary-credited', '/dashboard/run-payroll'],
+    ['salary-register', '/dashboard/payroll-register'],
+    ['approve-payroll', '/dashboard/payslips'],
+    ['advances', '/dashboard/pay-adjustments?tab=advances'],
+    ['overtime', '/dashboard/pay-adjustments?tab=overtime'],
+    ['salary-structures', '/dashboard/payroll-setup?tab=structures'],
+    ['compliance', '/dashboard/payroll-setup?tab=statutory'],
+    ['bank-details', '/dashboard/payroll-setup?tab=bank'],
+    ['attendance-overview', '/dashboard/attendance-leave?tab=overview'],
+    ['attendance', '/dashboard/attendance-leave?tab=attendance'],
+    ['leave-management', '/dashboard/attendance-leave?tab=leave'],
+    ['attendance-reports', '/dashboard/attendance-leave?tab=reports'],
+    ['leave-policy/setup', '/dashboard/leave-policy?tab=setup'],
+    ['leave-policy/types', '/dashboard/leave-policy?tab=types'],
+    ['leave-policy/calendar', '/dashboard/leave-policy?tab=calendar'],
+    ['leave-policy/shifts', '/dashboard/leave-policy?tab=shifts'],
+    ['org/entities', '/dashboard/organisation?tab=entities'],
+    ['org/departments', '/dashboard/organisation?tab=departments'],
+    ['org/designations', '/dashboard/organisation?tab=designations'],
+];
+
 export default function App() {
     return (
         <Routes>
@@ -51,39 +75,37 @@ export default function App() {
             <Route element={<ProtectedRoute />}>
                 <Route path="/dashboard" element={<DashboardLayout />}>
                     <Route index element={<DashboardPage />} />
+
+                    {/* ── Main ─────────────────────────────────────────────── */}
+                    <Route path="inbox" element={<InboxPage />} />
                     <Route path="employees" element={<EmployeesPage />} />
                     <Route path="employees/onboard" element={<OnboardEmployeePage />} />
                     <Route path="employees/:id" element={<EmployeeDetailPage />} />
+                    <Route path="documents" element={<DocumentsPage />} />
 
-                    {/* Roles & Access */}
+                    {/* ── Payroll (monthly) ────────────────────────────────── */}
+                    <Route path="run-payroll" element={<MarkSalaryCreditedPage />} />
+                    <Route path="payroll-register" element={<SalaryRegister />} />
+                    <Route path="payslips" element={<ApprovePayroll />} />
+                    <Route path="pay-adjustments" element={<PayAdjustmentsPage />} />
+
+                    {/* ── Attendance ───────────────────────────────────────── */}
+                    <Route path="attendance-leave" element={<AttendanceLeavePage />} />
+
+                    {/* ── Setup ────────────────────────────────────────────── */}
+                    <Route path="organisation" element={<OrganisationPage />} />
+                    <Route path="payroll-setup" element={<PayrollSetupPage />} />
+                    <Route path="leave-policy" element={<LeavePolicyPage />} />
                     <Route path="roles" element={<RolesPage />} />
                     <Route path="roles/:roleId/users" element={<RoleUsersPage />} />
                     <Route path="roles/:roleId/access" element={<RoleAccessPage />} />
 
-                    {/* Payroll */}
-                    <Route path="salary-structures" element={<SalaryStructures />} />
-                    <Route path="compliance" element={<ComplianceSettings />} />
-                    <Route path="bank-details" element={<BankReports />} />
-                    <Route path="salary-register" element={<SalaryRegister />} />
-                    <Route path="approve-payroll" element={<ApprovePayroll />} />
-                    <Route path="salary-credited" element={<MarkSalaryCreditedPage />} />
-                    <Route path="advances" element={<SalaryAdvancesPage />} />
-                    <Route path="overtime" element={<OvertimePage />} />
-
-                    {/* Leave & Attendance */}
-                    <Route path="attendance-overview" element={<StaffAttendanceOverviewPage />} />
-                    <Route path="attendance" element={<AddStaffAttendancePage />} />
-                    <Route path="leave-management" element={<LeaveManagementPage />} />
-                    <Route path="attendance-reports" element={<AttendanceReportsPage />} />
-
-                    {/* Leave Policy — each tab as its own page (no tab bar).
-                        The `key` forces a fresh mount per route so activeTab tracks initialTab. */}
-                    <Route path="leave-policy/setup" element={<LeaveMasterScreen key="lp-setup" initialTab={0} hideTabBar />} />
-                    <Route path="leave-policy/types" element={<LeaveMasterScreen key="lp-types" initialTab={1} hideTabBar />} />
-                    <Route path="leave-policy/calendar" element={<LeaveMasterScreen key="lp-calendar" initialTab={2} hideTabBar />} />
-                    <Route path="leave-policy/shifts" element={<LeaveMasterScreen key="lp-shifts" initialTab={3} hideTabBar />} />
-
                     <Route path="settings" element={<PlaceholderPage title="Settings" />} />
+
+                    {/* Old URLs → their new home */}
+                    {MOVED.map(([from, to]) => (
+                        <Route key={from} path={from} element={<Navigate to={to} replace />} />
+                    ))}
                 </Route>
             </Route>
 

@@ -1,7 +1,4 @@
-// ─── API endpoint registry ────────────────────────────────────────────────────
-// Real endpoints taken from the main SchoolMate project Api.js.
-// Only the constants the payroll / leave-attendance screens actually import
-// are re-exported here (same names → same paths as the source project).
+
 const baseApiurl = `https://schoolcommunicationwebapimsmsuat-dredbbfmhzergfhw.canadacentral-01.azurewebsites.net/api/`;
 
 // ── Sub-bases (mirror the source Api.js) ──────────────────────────────────────

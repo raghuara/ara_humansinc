@@ -21,19 +21,11 @@ import {
     selectAdvances, selectAdvanceRequests, advanceMonths,
     giveAdvance, approveRequest, rejectRequest, recordRecovery, cancelAdvance,
 } from '../redux/slices/advancesSlice';
+import { PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK, PRIMARY_BORDER } from '../theme';
+import { inr, fmtDate, initialsFromName as initials, paletteColor as colorFor } from '../utils/format';
 
-const PRIMARY = '#7C5CFC';
-const PRIMARY_LIGHT = '#F1EEFE';
-const PRIMARY_DARK = '#6246E0';
-const PRIMARY_BORDER = '#C9BEFB';
 const card = { bgcolor: '#fff', border: '1px solid #E6EAF1', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.06)' };
 const solidBtn = { bgcolor: PRIMARY, color: '#fff', fontWeight: 700, borderRadius: '7px', boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: PRIMARY_DARK, boxShadow: 'none' } };
-
-const PALETTE = ['#7C5CFC', '#0EA5E9', '#F59E0B', '#16A34A', '#E11D48', '#6246E0', '#0891B2'];
-const initials = (n = '') => n.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-const colorFor = (s = '') => PALETTE[(s.charCodeAt(0) || 0) % PALETTE.length];
-const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const fmtMonth = (ym) => { if (!ym) return '—'; const [y, m] = ym.split('-'); return `${MONTHS[+m - 1]} ${y}`; };

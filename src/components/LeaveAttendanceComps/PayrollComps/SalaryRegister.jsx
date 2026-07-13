@@ -32,6 +32,7 @@ import { selectRoles } from '../../../redux/slices/rolesSlice';
 import * as XLSX from 'xlsx';
 import axios from 'axios';
 import SnackBar from '../../SnackBar';
+import { TableRowsSkeleton } from '../../ContentLoader';
 import { salaryRegisterDashboard } from '../../../Api/Api';
 
 // ─── Payroll Cycle Stages (mirrors PayrollOverview) ─────────────────────────
@@ -720,14 +721,7 @@ export default function SalaryRegister() {
                                 </TableHead>
                                 <TableBody>
                                     {isLoading ? (
-                                        <TableRow>
-                                            <TableCell colSpan={9} align="center" sx={{ py: 6, borderBottom: 'none' }}>
-                                                <CircularProgress size={28} sx={{ color: PRIMARY }} />
-                                                <Typography sx={{ fontSize: '12px', color: '#9CA3AF', mt: 1.2 }}>
-                                                    Loading salary register…
-                                                </Typography>
-                                            </TableCell>
-                                        </TableRow>
+                                        <TableRowsSkeleton rows={7} cols={9} avatarCol={1} />
                                     ) : filteredData.length === 0 ? (
                                         <TableRow>
                                             <TableCell colSpan={9} align="center" sx={{ py: 6, borderBottom: 'none' }}>

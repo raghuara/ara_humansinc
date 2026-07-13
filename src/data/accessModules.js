@@ -20,33 +20,40 @@ import RuleRoundedIcon from '@mui/icons-material/RuleRounded';
 import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
+import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded';
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
+import WorkspacePremiumRoundedIcon from '@mui/icons-material/WorkspacePremiumRounded';
+import FolderSharedRoundedIcon from '@mui/icons-material/FolderSharedRounded';
+import MarkEmailUnreadRoundedIcon from '@mui/icons-material/MarkEmailUnreadRounded';
 
+// Grouped to mirror the sidebar, so granting access reads the same way you
+// navigate. The `key`s are deliberately unchanged from before the nav was
+// reorganised — they're what every role's saved access map is keyed by, and
+// renaming one would silently revoke that permission for existing roles.
 export const MODULE_GROUPS = [
     {
-        group: 'General',
+        group: 'Main',
         color: '#7C5CFC',
         items: [
             { key: 'dashboard', label: 'Dashboard', icon: SpaceDashboardRoundedIcon },
+            { key: 'inbox', label: 'Inbox', icon: MarkEmailUnreadRoundedIcon },
             { key: 'employees', label: 'Employees', icon: GroupsRoundedIcon },
-            { key: 'roles', label: 'Roles & Access', icon: AdminPanelSettingsRoundedIcon },
+            { key: 'documents', label: 'Documents', icon: FolderSharedRoundedIcon },
         ],
     },
     {
         group: 'Payroll',
         color: '#0EA5E9',
         items: [
-            { key: 'salary-structures', label: 'Salary Structures', icon: RequestQuoteRoundedIcon },
-            { key: 'compliance', label: 'Statutory Deductions', icon: VerifiedUserRoundedIcon },
-            { key: 'bank-details', label: 'Bank Details', icon: AccountBalanceWalletRoundedIcon },
+            { key: 'salary-credited', label: 'Run Payroll', icon: PaidRoundedIcon },
             { key: 'salary-register', label: 'Payroll Register', icon: ReceiptLongRoundedIcon },
             { key: 'approve-payroll', label: 'Payslips', icon: FactCheckRoundedIcon },
-            { key: 'salary-credited', label: 'Run Payroll', icon: PaidRoundedIcon },
             { key: 'advances', label: 'Salary Advances', icon: SavingsRoundedIcon },
             { key: 'overtime', label: 'Overtime (OT)', icon: MoreTimeRoundedIcon },
         ],
     },
     {
-        group: 'Leave & Attendance',
+        group: 'Attendance',
         color: '#16A34A',
         items: [
             { key: 'attendance-overview', label: 'Overview', icon: GridViewRoundedIcon },
@@ -56,7 +63,26 @@ export const MODULE_GROUPS = [
         ],
     },
     {
-        group: 'Leave Policy',
+        group: 'Setup — Organisation',
+        color: '#0891B2',
+        items: [
+            { key: 'entities', label: 'Business Entities', icon: ApartmentRoundedIcon },
+            { key: 'departments', label: 'Departments', icon: AccountTreeRoundedIcon },
+            { key: 'designations', label: 'Designations', icon: WorkspacePremiumRoundedIcon },
+            { key: 'roles', label: 'Roles & Access', icon: AdminPanelSettingsRoundedIcon },
+        ],
+    },
+    {
+        group: 'Setup — Payroll',
+        color: '#6246E0',
+        items: [
+            { key: 'salary-structures', label: 'Salary Structures', icon: RequestQuoteRoundedIcon },
+            { key: 'compliance', label: 'Statutory Deductions', icon: VerifiedUserRoundedIcon },
+            { key: 'bank-details', label: 'Bank Details', icon: AccountBalanceWalletRoundedIcon },
+        ],
+    },
+    {
+        group: 'Setup — Leave Policy',
         color: '#F59E0B',
         items: [
             { key: 'policy-setup', label: 'Policy Setup', icon: RuleRoundedIcon },

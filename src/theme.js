@@ -4,6 +4,7 @@ import { createTheme } from '@mui/material/styles';
 export const PRIMARY = '#7C5CFC';
 export const PRIMARY_LIGHT = '#F1EEFE';
 export const PRIMARY_DARK = '#6246E0';
+export const PRIMARY_BORDER = '#C9BEFB';
 export const INK = '#0F172A';
 export const MUTED = '#64748B';
 

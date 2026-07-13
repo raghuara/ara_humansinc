@@ -25,6 +25,7 @@ import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { addEmployee, selectEmployees, selectIdPrefix, nextEmployeeCode } from '../redux/slices/employeesSlice';
+import { selectDepartmentNames, selectDesignationNames } from '../redux/slices/orgSlice';
 
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
@@ -34,8 +35,6 @@ const tonalBtn = { bgcolor: PRIMARY_LIGHT, color: PRIMARY, border: `1px solid ${
 const solidBtn = { bgcolor: PRIMARY, color: '#fff', fontWeight: 700, borderRadius: '7px', boxShadow: `0 2px 6px ${PRIMARY}40`, textTransform: 'none', '&:hover': { bgcolor: '#6246E0', boxShadow: `0 4px 10px ${PRIMARY}55` } };
 const field = { '& .MuiOutlinedInput-root': { borderRadius: '7px', fontSize: 14, bgcolor: '#F8FAFC', '& fieldset': { borderColor: '#E5E7EB' }, '&:hover fieldset': { borderColor: '#D8DEE8' }, '&.Mui-focused fieldset': { borderColor: PRIMARY, borderWidth: 1.5 } } };
 
-const DEPARTMENTS = ['Engineering', 'Sales', 'Design', 'Human Resources', 'Finance', 'Operations', 'Support', 'Marketing'];
-const DESIGNATIONS = ['Software Engineer', 'Senior Engineer', 'Team Lead', 'Manager', 'Executive', 'Analyst', 'Associate', 'Director'];
 const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
 const MARITAL = ['Single', 'Married', 'Divorced', 'Widowed'];
 const BLOOD = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
@@ -140,6 +139,11 @@ export default function OnboardEmployeePage() {
     const employees = useSelector(selectEmployees);
     const idPrefix = useSelector(selectIdPrefix);
     const empId = useMemo(() => nextEmployeeCode(employees, idPrefix), [employees, idPrefix]);
+
+    // Department / designation options come from the Organisation masters of the
+    // entity currently being worked in — not a hard-coded list.
+    const DEPARTMENTS = useSelector(selectDepartmentNames);
+    const DESIGNATIONS = useSelector(selectDesignationNames);
 
     const [form, setForm] = useState(EMPTY);
     const [photo, setPhoto] = useState(null);        // { url, name }

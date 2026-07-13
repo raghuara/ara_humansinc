@@ -20,7 +20,7 @@ import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSetting
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
-import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded';
+import PhoneIphoneRoundedIcon from '@mui/icons-material/PhoneIphoneRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
@@ -73,8 +73,10 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     useEffect(() => { const t = setTimeout(() => setLoading(false), 650); return () => clearTimeout(t); }, []);
 
-    // Clock-in timer
-    const [clockedIn, setClockedIn] = useState(false);
+    // Clock-in status — read-only on the dashboard; punches are made in the mobile app
+    const [clockedIn] = useState(false);
+    const [punchIn] = useState(null);
+    const [punchOut] = useState(null);
     const [elapsed, setElapsed] = useState(0);
     useEffect(() => {
         if (!clockedIn) return undefined;
@@ -136,9 +138,9 @@ export default function DashboardPage() {
 
     const KPIS = [
         { label: 'Total Employees', value: total, sub: 'Active workforce', icon: GroupsRoundedIcon, color: PRIMARY, bg: PRIMARY_LIGHT, onClick: () => navigate('/dashboard/employees') },
-        { label: 'Present Today', value: att.present, sub: `${total ? Math.round((att.present / total) * 100) : 0}% attendance`, icon: HowToRegRoundedIcon, color: '#16A34A', bg: '#DCFCE7', onClick: () => navigate('/dashboard/attendance-overview') },
-        { label: 'Absent Today', value: att.absent + att.onLeave, sub: `${att.absent} absent · ${att.onLeave} on leave`, icon: EventBusyRoundedIcon, color: '#F59E0B', bg: '#FFF7ED', onClick: () => navigate('/dashboard/attendance-overview') },
-        { label: 'Pending Approvals', value: pendingApprovals, sub: 'Awaiting your action', icon: PendingActionsRoundedIcon, color: '#0EA5E9', bg: '#E0F2FE', onClick: () => navigate('/dashboard/approve-payroll') },
+        { label: 'Present Today', value: att.present, sub: `${total ? Math.round((att.present / total) * 100) : 0}% attendance`, icon: HowToRegRoundedIcon, color: '#16A34A', bg: '#DCFCE7', onClick: () => navigate('/dashboard/attendance-leave?tab=overview') },
+        { label: 'Absent Today', value: att.absent + att.onLeave, sub: `${att.absent} absent · ${att.onLeave} on leave`, icon: EventBusyRoundedIcon, color: '#F59E0B', bg: '#FFF7ED', onClick: () => navigate('/dashboard/attendance-leave?tab=overview') },
+        { label: 'Pending Approvals', value: pendingApprovals, sub: 'Awaiting your action', icon: PendingActionsRoundedIcon, color: '#0EA5E9', bg: '#E0F2FE', onClick: () => navigate('/dashboard/payslips') },
     ];
 
     const attTotal = att.present + att.absent + att.onLeave;
@@ -155,10 +157,10 @@ export default function DashboardPage() {
 
     const quickActions = [
         { label: 'Onboard Employee', icon: PersonAddAlt1RoundedIcon, to: '/dashboard/employees/onboard', color: '#7C5CFC' },
-        { label: 'Run Payroll', icon: FactCheckRoundedIcon, to: '/dashboard/approve-payroll', color: '#16A34A' },
-        { label: 'Salary Structures', icon: RequestQuoteRoundedIcon, to: '/dashboard/salary-structures', color: '#0EA5E9' },
-        { label: 'Mark Attendance', icon: HowToRegRoundedIcon, to: '/dashboard/attendance', color: '#F59E0B' },
-        { label: 'Leave Management', icon: BeachAccessRoundedIcon, to: '/dashboard/leave-management', color: '#0891B2' },
+        { label: 'Run Payroll', icon: FactCheckRoundedIcon, to: '/dashboard/run-payroll', color: '#16A34A' },
+        { label: 'Salary Structures', icon: RequestQuoteRoundedIcon, to: '/dashboard/payroll-setup?tab=structures', color: '#0EA5E9' },
+        { label: 'Mark Attendance', icon: HowToRegRoundedIcon, to: '/dashboard/attendance-leave?tab=attendance', color: '#F59E0B' },
+        { label: 'Leave Management', icon: BeachAccessRoundedIcon, to: '/dashboard/attendance-leave?tab=leave', color: '#0891B2' },
         { label: 'Roles & Access', icon: AdminPanelSettingsRoundedIcon, to: '/dashboard/roles', color: '#E11D48' },
     ];
 
@@ -174,7 +176,7 @@ export default function DashboardPage() {
                 </Box>
                 <Stack direction="row" spacing={1}>
                     <Button onClick={() => navigate('/dashboard/employees/onboard')} startIcon={<PersonAddAlt1RoundedIcon />} sx={{ ...tonalBtn, height: 42, px: 2 }}>Onboard</Button>
-                    <Button onClick={() => navigate('/dashboard/approve-payroll')} startIcon={<PlayArrowRoundedIcon />} sx={{ ...solidBtn, height: 42, px: 2.2 }}>Run Payroll</Button>
+                    <Button onClick={() => navigate('/dashboard/payslips')} startIcon={<PlayArrowRoundedIcon />} sx={{ ...solidBtn, height: 42, px: 2.2 }}>Run Payroll</Button>
                 </Stack>
             </Stack>
 
@@ -187,8 +189,13 @@ export default function DashboardPage() {
                         <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', opacity: 0.85, position: 'relative' }}>TODAY</Typography>
                         <Typography sx={{ fontSize: 13.5, opacity: 0.9, mb: 2.2, position: 'relative' }}>{today}</Typography>
                         <Typography sx={{ fontSize: 42, fontWeight: 800, letterSpacing: '1px', lineHeight: 1, position: 'relative' }}>{fmtTimer(elapsed)}</Typography>
-                        <Typography sx={{ fontSize: 13, opacity: 0.85, mt: 0.6, mb: 2.5, position: 'relative' }}>{clockedIn ? 'Clocked in' : 'Not clocked in yet'}</Typography>
-                        <Stack direction="row" spacing={1} sx={{ mb: 2.5, position: 'relative' }}>
+
+                        <Stack direction="row" spacing={0.8} sx={{ alignItems: 'center', mt: 1.2, mb: 2.5, position: 'relative' }}>
+                            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: clockedIn ? '#4ADE80' : 'rgba(255,255,255,0.6)', boxShadow: clockedIn ? '0 0 0 3px rgba(74,222,128,0.25)' : 'none' }} />
+                            <Typography sx={{ fontSize: 13, opacity: 0.9 }}>{clockedIn ? 'Clocked in' : 'Not clocked in yet'}</Typography>
+                        </Stack>
+
+                        <Stack direction="row" spacing={1} sx={{ mb: 1.2, position: 'relative' }}>
                             {[['BREAK', '00:00:00'], ['SHIFT', '—'], ['OT', '00:00:00']].map(([l, v]) => (
                                 <Box key={l} sx={{ flex: 1, bgcolor: 'rgba(255,255,255,0.14)', borderRadius: '7px', p: 1.2 }}>
                                     <Typography sx={{ fontSize: 9.5, fontWeight: 700, opacity: 0.8 }}>{l}</Typography>
@@ -196,22 +203,19 @@ export default function DashboardPage() {
                                 </Box>
                             ))}
                         </Stack>
-                        <Box
-                            component="button"
-                            onClick={() => setClockedIn((v) => !v)}
-                            sx={{
-                                position: 'relative', width: '100%', height: 46, border: 'none', cursor: 'pointer',
-                                bgcolor: '#fff', color: PRIMARY, fontWeight: 700, fontSize: 14, borderRadius: '7px',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5,
-                                fontFamily: 'inherit', transition: 'background-color .2s',
-                                '&:hover': { bgcolor: '#F3F0FF' },
-                            }}
-                        >
-                            <PlayArrowRoundedIcon sx={{ fontSize: 20 }} /> {clockedIn ? 'Clock Out' : 'Clock In'}
-                        </Box>
-                        <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', mt: 1.5, opacity: 0.85, position: 'relative' }}>
-                            <PlaceRoundedIcon sx={{ fontSize: 14 }} />
-                            <Typography sx={{ fontSize: 11.5 }}>{clockedIn ? 'Punched in' : 'Awaiting first punch'}</Typography>
+
+                        <Stack direction="row" spacing={1} sx={{ position: 'relative' }}>
+                            {[['FIRST IN', punchIn], ['LAST OUT', punchOut]].map(([l, v]) => (
+                                <Box key={l} sx={{ flex: 1, bgcolor: 'rgba(255,255,255,0.14)', borderRadius: '7px', p: 1.2 }}>
+                                    <Typography sx={{ fontSize: 9.5, fontWeight: 700, opacity: 0.8 }}>{l}</Typography>
+                                    <Typography sx={{ fontSize: 12.5, fontWeight: 800, mt: 0.3 }}>{v || '—'}</Typography>
+                                </Box>
+                            ))}
+                        </Stack>
+
+                        <Stack direction="row" spacing={0.8} sx={{ alignItems: 'center', mt: 2.2, pt: 1.6, borderTop: '1px solid rgba(255,255,255,0.18)', opacity: 0.85, position: 'relative' }}>
+                            <PhoneIphoneRoundedIcon sx={{ fontSize: 14 }} />
+                            <Typography sx={{ fontSize: 11.5 }}>Punch in from the ARA HumanSync mobile app</Typography>
                         </Stack>
                     </Box>
                 </Grid>
@@ -242,7 +246,7 @@ export default function DashboardPage() {
             {/* Row: attendance donut · payroll status · quick actions */}
             <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
                 <Grid size={{ xs: 12, md: 6, lg: 4 }}>
-                    <Panel title="Attendance Today" icon={HowToRegRoundedIcon} color="#16A34A" action="Overview" onAction={() => navigate('/dashboard/attendance-overview')} i={4}>
+                    <Panel title="Attendance Today" icon={HowToRegRoundedIcon} color="#16A34A" action="Overview" onAction={() => navigate('/dashboard/attendance-leave?tab=overview')} i={4}>
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2.2 }}>
                             {/* gradient defs (referenced by the donut arcs) */}
                             <Box component="svg" aria-hidden sx={{ position: 'absolute', width: 0, height: 0 }}>
@@ -323,7 +327,7 @@ export default function DashboardPage() {
                                 );
                             })}
                         </Stack>
-                        <Button fullWidth onClick={() => navigate('/dashboard/approve-payroll')} endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />} sx={{ ...tonalBtn, mt: 1.5, height: 38 }}>Continue Payroll</Button>
+                        <Button fullWidth onClick={() => navigate('/dashboard/payslips')} endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />} sx={{ ...tonalBtn, mt: 1.5, height: 38 }}>Continue Payroll</Button>
                     </Panel>
                 </Grid>
 
@@ -348,7 +352,7 @@ export default function DashboardPage() {
             {/* Row: payroll trend bar chart · headcount by department */}
             <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
                 <Grid size={{ xs: 12, lg: 8 }}>
-                    <Panel title="Payroll Cost Trend" icon={PaymentsRoundedIcon} color="#7C5CFC" action="Salary Register" onAction={() => navigate('/dashboard/salary-register')} i={7}>
+                    <Panel title="Payroll Cost Trend" icon={PaymentsRoundedIcon} color="#7C5CFC" action="Salary Register" onAction={() => navigate('/dashboard/payroll-register')} i={7}>
                         <BarChart
                             xAxis={[{ scaleType: 'band', data: trendMonths, categoryGapRatio: 0.55, barGapRatio: 0.3 }]}
                             yAxis={[{ valueFormatter: (v) => `₹${v}L`, width: 44 }]}
@@ -390,7 +394,7 @@ export default function DashboardPage() {
             {/* Row: leave requests · joiners & resignations */}
             <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
                 <Grid size={{ xs: 12, lg: 6 }}>
-                    <Panel title="Leave Requests" icon={BeachAccessRoundedIcon} color="#0891B2" action="View all" onAction={() => navigate('/dashboard/leave-management')} i={7}>
+                    <Panel title="Leave Requests" icon={BeachAccessRoundedIcon} color="#0891B2" action="View all" onAction={() => navigate('/dashboard/attendance-leave?tab=leave')} i={7}>
                         <Stack spacing={0.4}>
                             {leaveRequests.map((lr) => (
                                 <Stack key={lr.id} direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, p: 1, borderRadius: '9px', transition: 'background-color .15s', '&:hover': { bgcolor: '#F8FAFC' } }}>
