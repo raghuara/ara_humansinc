@@ -3,16 +3,14 @@ import {
     Box, Typography, TextField, Button, Grid, IconButton,
     Card, CardContent, Switch, InputAdornment, Chip, Tab, Tabs,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Avatar,
-    Dialog, DialogContent, DialogActions, CircularProgress, Tooltip, Paper,
+    Dialog, DialogContent, DialogActions, CircularProgress, Tooltip,
 } from '@mui/material';
-import axios from 'axios';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import http from '../../../Api/http';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import SecurityIcon from '@mui/icons-material/Security';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import EditIcon from '@mui/icons-material/Edit';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
@@ -20,7 +18,6 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectWebsiteSettings } from '../../../redux/slices/websiteSettingsSlice';
 import SnackBar from '../../SnackBar';
@@ -49,11 +46,8 @@ const getInitials = (name = '') =>
 const formatINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function ComplianceSettings() {
-    const navigate = useNavigate();
-    const token = "123";
     const user = useSelector((state) => state.auth);
     const rollNumber = user.rollNumber;
-    const isExpanded = useSelector((state) => state.sidebar.isExpanded);
     const websiteSettings = useSelector(selectWebsiteSettings);
     const [activeTab, setActiveTab] = useState(0);
 
@@ -126,9 +120,7 @@ export default function ComplianceSettings() {
 
     const fetchDeductionsConfig = async () => {
         try {
-            const res = await axios.get(getDeductionsAndCompliance, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.get(getDeductionsAndCompliance);
             if (res.data && !res.data.error) {
                 const d = res.data.data;
                 setPfSettings(prev => ({
@@ -165,9 +157,7 @@ export default function ComplianceSettings() {
     const fetchComplianceDashboard = async () => {
         setIsLoading(true);
         try {
-            const res = await axios.get(employeeComplianceDashboard, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.get(employeeComplianceDashboard);
             if (res.data && !res.data.error) {
                 const d = res.data.data;
                 setStats({
@@ -243,9 +233,7 @@ export default function ComplianceSettings() {
 
         setIsSavingCompliance(true);
         try {
-            const res = await axios.put(updateEmployeeComplianceByRollnumber, body, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.put(updateEmployeeComplianceByRollnumber, body);
 
             if (res.data && !res.data.error) {
                 setEmployeeData(employeeData.map(emp =>
@@ -332,9 +320,7 @@ export default function ComplianceSettings() {
             };
             setIsPFSaving(true);
             try {
-                const res = await axios.post(postPFConfiguration, body, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await http.post(postPFConfiguration, body);
                 if (res.data && !res.data.error) {
                     showSnack('PF configuration saved successfully!', true);
                 } else {
@@ -363,9 +349,7 @@ export default function ComplianceSettings() {
             };
             setIsESISaving(true);
             try {
-                const res = await axios.post(postESIConfiguration, body, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await http.post(postESIConfiguration, body);
                 if (res.data && !res.data.error) {
                     showSnack('ESI configuration saved successfully!', true);
                 } else {
@@ -394,9 +378,7 @@ export default function ComplianceSettings() {
             };
             setIsPTSaving(true);
             try {
-                const res = await axios.post(postProfessionalTaxConfiguration, body, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await http.post(postProfessionalTaxConfiguration, body);
                 if (res.data && !res.data.error) {
                     showSnack('PT configuration saved successfully!', true);
                 } else {
@@ -422,9 +404,7 @@ export default function ComplianceSettings() {
             };
             setIsTDSSaving(true);
             try {
-                const res = await axios.post(postTDSConfiguration, body, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await http.post(postTDSConfiguration, body);
                 if (res.data && !res.data.error) {
                     showSnack('TDS configuration saved successfully!', true);
                 } else {

@@ -1,66 +1,164 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Box, Typography, Grid, Button, Avatar, Chip, Stack, InputAdornment, TextField,
-    Snackbar, Alert, IconButton, Tooltip,
+    Snackbar, Alert, Tooltip, Skeleton, IconButton, CircularProgress,
 } from '@mui/material';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HowToRegRoundedIcon from '@mui/icons-material/HowToRegRounded';
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded';
 import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded';
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useSelector, useDispatch } from 'react-redux';
-import { selectEmployees, selectIdPrefix, setIdPrefix, sanitizePrefix, nextEmployeeCode } from '../redux/slices/employeesSlice';
+import { sanitizePrefix } from '../redux/slices/employeesSlice';
+import http, { apiErrorMessage } from '../Api/http';
+import { GetEmployees, GetLoginIdFormat, UpdateLoginIdFormat } from '../Api/Api';
+import { fmtApiDate } from '../utils/apiFields';
 
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
 const PRIMARY_BORDER = '#C9BEFB';
+const PAGE_SIZE = 20;
 const card = { bgcolor: '#fff', border: '1px solid #E6EAF1', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.06)' };
 const tonalBtn = { bgcolor: PRIMARY_LIGHT, color: PRIMARY, border: `1px solid ${PRIMARY_BORDER}`, fontWeight: 700, borderRadius: '7px', boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: '#E7DFFC' } };
 
 const PALETTE = ['#7C5CFC', '#0EA5E9', '#F59E0B', '#16A34A', '#E11D48', '#6246E0', '#0891B2'];
-const initials = (f = '', l = '') => `${f[0] || ''}${l[0] || ''}`.toUpperCase();
+const initials = (name = '') => name.trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 const colorFor = (s = '') => PALETTE[(s.charCodeAt(0) || 0) % PALETTE.length];
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+const fmtDate = (v) => fmtApiDate(v) || '—';
 
 export default function EmployeesPage() {
     const navigate = useNavigate();
     const location = useLocation();
-    const dispatch = useDispatch();
-    const rows = useSelector(selectEmployees);
-    const idPrefix = useSelector(selectIdPrefix);
-    const [search, setSearch] = useState('');
-    const [snack, setSnack] = useState('');
 
-    const nextId = useMemo(() => nextEmployeeCode(rows, idPrefix), [rows, idPrefix]);
+    // `search` is what's typed; `query` is what's been sent. Debouncing between
+    // them keeps one keystroke from firing one request.
+    const [search, setSearch] = useState('');
+    const [query, setQuery] = useState('');
+    const [page, setPage] = useState(1);
+
+    const [rows, setRows] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [snack, setSnack] = useState({ msg: '', severity: 'success' });
+
+    // Login ID format. The server owns both halves — the prefix and the running
+    // number — so `nextLoginId` is read from it rather than guessed from the rows
+    // on this page (which are only one page of the directory anyway).
+    const [savedPrefix, setSavedPrefix] = useState('');
+    const [prefix, setPrefix] = useState('');
+    const [nextId, setNextId] = useState('');
+    const [fmtLoading, setFmtLoading] = useState(true);
+    const [fmtSaving, setFmtSaving] = useState(false);
+
+    const notify = (msg, severity = 'success') => setSnack({ msg, severity });
+
+    const loadFormat = useCallback(async () => {
+        setFmtLoading(true);
+        try {
+            const { data: body } = await http.get(GetLoginIdFormat);
+            if (body?.error) throw new Error(body.message || 'Could not load the login ID format.');
+            const d = body?.data || {};
+            setSavedPrefix(d.prefix || '');
+            setPrefix(d.prefix || '');
+            setNextId(d.nextLoginId || '');
+        } catch {
+            // Non-fatal: the directory is still usable without this card.
+            setNextId('');
+        } finally {
+            setFmtLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { loadFormat(); }, [loadFormat]);
+
+    const saveFormat = async () => {
+        const next = sanitizePrefix(prefix);
+        if (!next) { notify('Enter the starting letters for the login ID.', 'warning'); return; }
+        setFmtSaving(true);
+        try {
+            const { data: body } = await http.put(UpdateLoginIdFormat, { prefix: next });
+            if (body?.error) throw new Error(body.message || 'Could not update the login ID format.');
+            // The response carries the recomputed nextLoginId; fall back to a
+            // re-read if it doesn't, rather than showing a stale preview.
+            const d = body?.data;
+            if (d?.prefix) {
+                setSavedPrefix(d.prefix);
+                setPrefix(d.prefix);
+                setNextId(d.nextLoginId || '');
+            } else {
+                await loadFormat();
+            }
+            notify('Login ID format updated');
+        } catch (err) {
+            notify(err?.response || err?.request ? apiErrorMessage(err, 'Could not update the login ID format.') : err.message, 'error');
+        } finally {
+            setFmtSaving(false);
+        }
+    };
+
+    const prefixDirty = sanitizePrefix(prefix) !== savedPrefix;
 
     useEffect(() => {
         if (location.state?.toast) {
-            setSnack(location.state.toast);
+            setSnack({ msg: location.state.toast, severity: location.state.severity || 'success' });
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location, navigate]);
 
-    const stats = useMemo(() => ({
-        total: rows.length,
-        active: rows.filter((r) => (r.status || 'Active') === 'Active').length,
-        depts: new Set(rows.map((r) => r.department)).size,
-        newThisMonth: rows.filter((r) => (r.doj || '').startsWith(new Date().toISOString().slice(0, 7))).length,
-    }), [rows]);
+    useEffect(() => {
+        const t = setTimeout(() => { setQuery(search.trim()); setPage(1); }, 400);
+        return () => clearTimeout(t);
+    }, [search]);
 
-    const filtered = rows.filter((r) => {
-        const q = search.toLowerCase();
-        return !q || `${r.firstName} ${r.lastName} ${r.employeeId} ${r.department}`.toLowerCase().includes(q);
-    });
+    const load = useCallback(async () => {
+        setLoading(true);
+        setLoadError('');
+        try {
+            const { data: body } = await http.get(GetEmployees, {
+                params: { search: query, page, pageSize: PAGE_SIZE },
+            });
+            if (body?.error) throw new Error(body.message || 'Could not load employees.');
+            const d = body?.data || {};
+            setRows(d.items || []);
+            setTotal(d.total || 0);
+        } catch (err) {
+            setLoadError(err?.response || err?.request ? apiErrorMessage(err, 'Could not load employees.') : err.message);
+            setRows([]);
+            setTotal(0);
+        } finally {
+            setLoading(false);
+        }
+    }, [query, page]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const from = total ? (page - 1) * PAGE_SIZE + 1 : 0;
+    const to = Math.min(page * PAGE_SIZE, total);
+
+    // Only the total is a whole-directory figure — the rest can only be counted
+    // from the page in hand, so they're shown as "—" the moment the list spans
+    // more than one page rather than quietly reporting a page-sized lie.
+    const pageOnly = total > rows.length;
+    const activeCount = rows.filter((r) => String(r.status || '').toLowerCase() === 'active').length;
+    const deptCount = new Set(rows.map((r) => r.department).filter(Boolean)).size;
+    const partial = (v) => (pageOnly ? '—' : v);
 
     const KPIS = [
-        { label: 'Total Employees', value: stats.total, icon: GroupsRoundedIcon, color: PRIMARY, bg: PRIMARY_LIGHT },
-        { label: 'Active', value: stats.active, icon: HowToRegRoundedIcon, color: '#16A34A', bg: '#DCFCE7' },
-        { label: 'Departments', value: stats.depts, icon: ApartmentRoundedIcon, color: '#0EA5E9', bg: '#E0F2FE' },
-        { label: 'New This Month', value: stats.newThisMonth, icon: PersonAddAlt1RoundedIcon, color: '#F59E0B', bg: '#FFF7ED' },
+        { label: 'Total Employees', value: loading ? '—' : total, icon: GroupsRoundedIcon, color: PRIMARY, bg: PRIMARY_LIGHT },
+        { label: 'Active', value: loading ? '—' : partial(activeCount), icon: HowToRegRoundedIcon, color: '#16A34A', bg: '#DCFCE7', capped: pageOnly },
+        { label: 'Departments', value: loading ? '—' : partial(deptCount), icon: ApartmentRoundedIcon, color: '#0EA5E9', bg: '#E0F2FE', capped: pageOnly },
+        { label: 'On This Page', value: loading ? '—' : rows.length, icon: PersonAddAlt1RoundedIcon, color: '#F59E0B', bg: '#FFF7ED' },
     ];
 
     return (
@@ -84,7 +182,9 @@ export default function EmployeesPage() {
                             <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <Box>
                                     <Typography sx={{ fontSize: 11, fontWeight: 700, color: k.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>{k.label}</Typography>
-                                    <Typography sx={{ fontSize: 28, fontWeight: 800, color: '#0F172A', mt: 0.5 }}>{k.value}</Typography>
+                                    <Tooltip arrow title={k.capped ? 'Needs a summary from the API — this can’t be counted from one page of results.' : ''}>
+                                        <Typography sx={{ fontSize: 28, fontWeight: 800, color: '#0F172A', mt: 0.5, width: 'fit-content' }}>{k.value}</Typography>
+                                    </Tooltip>
                                 </Box>
                                 <Box sx={{ width: 44, height: 44, borderRadius: '7px', bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <k.icon sx={{ color: k.color, fontSize: 22 }} />
@@ -112,8 +212,10 @@ export default function EmployeesPage() {
                     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
                         <Box>
                             <TextField
-                                value={idPrefix}
-                                onChange={(e) => dispatch(setIdPrefix(sanitizePrefix(e.target.value)))}
+                                value={prefix}
+                                disabled={fmtLoading || fmtSaving}
+                                onChange={(e) => setPrefix(sanitizePrefix(e.target.value))}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && prefixDirty) saveFormat(); }}
                                 size="small"
                                 placeholder="EMP"
                                 inputProps={{ maxLength: 5, style: { textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 } }}
@@ -122,9 +224,21 @@ export default function EmployeesPage() {
                             />
                             <Typography sx={{ fontSize: 10.5, color: '#98A0AE', mt: 0.4, ml: 0.3 }}>Starting letters · max 5</Typography>
                         </Box>
-                        <Box sx={{ px: 2, py: 1, borderRadius: '7px', bgcolor: '#F7F6FD', border: `1px dashed ${PRIMARY_BORDER}`, textAlign: 'center' }}>
+
+                        <Button
+                            onClick={saveFormat}
+                            disabled={fmtLoading || fmtSaving || !prefixDirty}
+                            startIcon={fmtSaving ? <CircularProgress size={15} sx={{ color: 'inherit' }} /> : <SaveRoundedIcon sx={{ fontSize: 17 }} />}
+                            sx={{ ...tonalBtn, height: 42, px: 2, mb: 2.2, '&.Mui-disabled': { bgcolor: '#F1F5F9', color: '#94A3B8', borderColor: '#E2E8F0' } }}
+                        >
+                            {fmtSaving ? 'Saving…' : 'Save'}
+                        </Button>
+
+                        <Box sx={{ px: 2, py: 1, borderRadius: '7px', bgcolor: '#F7F6FD', border: `1px dashed ${PRIMARY_BORDER}`, textAlign: 'center', mb: 2.2 }}>
                             <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#6E6B99', textTransform: 'uppercase', letterSpacing: 0.6 }}>Next Login ID</Typography>
-                            <Typography sx={{ fontSize: 17, fontWeight: 800, color: PRIMARY, letterSpacing: 0.5, mt: 0.2 }}>{nextId}</Typography>
+                            {fmtLoading
+                                ? <Skeleton variant="text" width={80} height={24} sx={{ mx: 'auto' }} />
+                                : <Typography sx={{ fontSize: 17, fontWeight: 800, color: PRIMARY, letterSpacing: 0.5, mt: 0.2 }}>{nextId || '—'}</Typography>}
                         </Box>
                     </Stack>
                 </Stack>
@@ -138,7 +252,7 @@ export default function EmployeesPage() {
                             <GroupsRoundedIcon sx={{ color: PRIMARY, fontSize: 18 }} />
                         </Box>
                         <Typography sx={{ fontSize: 15.5, fontWeight: 800, color: '#0F172A' }}>All Employees</Typography>
-                        <Chip label={`${filtered.length} records`} size="small" sx={{ bgcolor: PRIMARY_LIGHT, color: PRIMARY, fontWeight: 700, fontSize: 11.5 }} />
+                        <Chip label={loading ? 'Loading…' : `${total} record${total === 1 ? '' : 's'}`} size="small" sx={{ bgcolor: PRIMARY_LIGHT, color: PRIMARY, fontWeight: 700, fontSize: 11.5 }} />
                     </Stack>
                     <TextField
                         placeholder="Search employees…"
@@ -159,25 +273,35 @@ export default function EmployeesPage() {
                             </Box>
                         </Box>
                         <Box component="tbody">
-                            {filtered.map((r, idx) => {
-                                const resigned = (r.status || 'Active') === 'Resigned';
+                            {loading && Array.from({ length: 5 }).map((_, i) => (
+                                <Box component="tr" key={`sk-${i}`}>
+                                    {Array.from({ length: 7 }).map((__, j) => (
+                                        <Box component="td" key={j} sx={{ px: 2.5, py: 1.7, borderBottom: '1px solid #EEF0F6' }}>
+                                            <Skeleton variant="text" width={j === 0 ? 180 : 90} height={20} />
+                                        </Box>
+                                    ))}
+                                </Box>
+                            ))}
+
+                            {!loading && rows.map((r, idx) => {
+                                const active = String(r.status || '').toLowerCase() === 'active';
                                 return (
-                                    <Box component="tr" key={r.id} onClick={() => navigate(`/dashboard/employees/${r.id}`)} sx={{ cursor: 'pointer', bgcolor: idx % 2 ? '#FBFAFE' : '#fff', opacity: resigned ? 0.72 : 1, '&:hover': { bgcolor: '#F5F4FC' }, transition: 'background-color .15s' }}>
+                                    <Box component="tr" key={r.id} onClick={() => navigate(`/dashboard/employees/${r.id}`)} sx={{ cursor: 'pointer', bgcolor: idx % 2 ? '#FBFAFE' : '#fff', opacity: active ? 1 : 0.72, '&:hover': { bgcolor: '#F5F4FC' }, transition: 'background-color .15s' }}>
                                         <Box component="td" sx={{ px: 2.5, py: 1.5, borderBottom: '1px solid #EEF0F6' }}>
                                             <Stack direction="row" spacing={1.4} sx={{ alignItems: 'center' }}>
-                                                <Avatar sx={{ width: 36, height: 36, bgcolor: colorFor(r.firstName), fontSize: 13, fontWeight: 700, filter: resigned ? 'grayscale(0.4)' : 'none' }}>{initials(r.firstName, r.lastName)}</Avatar>
+                                                <Avatar src={r.profilePhotoUrl || undefined} sx={{ width: 36, height: 36, bgcolor: colorFor(r.fullName), fontSize: 13, fontWeight: 700, filter: active ? 'none' : 'grayscale(0.4)' }}>{initials(r.fullName)}</Avatar>
                                                 <Box sx={{ minWidth: 0 }}>
-                                                    <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0F172A' }}>{r.firstName} {r.lastName}</Typography>
-                                                    <Typography sx={{ fontSize: 11.5, color: '#98A0AE' }}>{r.email}</Typography>
+                                                    <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0F172A' }}>{r.fullName}</Typography>
+                                                    <Typography sx={{ fontSize: 11.5, color: '#98A0AE' }}>{r.personalEmail || r.personalMobile || '—'}</Typography>
                                                 </Box>
                                             </Stack>
                                         </Box>
-                                        <Box component="td" sx={{ px: 2.5, py: 1.5, fontSize: 13, color: '#475569', fontWeight: 600, borderBottom: '1px solid #EEF0F6' }}>{r.employeeId}</Box>
+                                        <Box component="td" sx={{ px: 2.5, py: 1.5, fontSize: 13, color: '#475569', fontWeight: 600, borderBottom: '1px solid #EEF0F6' }}>{r.employeeCode || '—'}</Box>
                                         <Box component="td" sx={{ px: 2.5, py: 1.5, borderBottom: '1px solid #EEF0F6' }}><Chip label={r.department || '—'} size="small" sx={{ bgcolor: '#F1F5F9', fontSize: 11.5, fontWeight: 600 }} /></Box>
                                         <Box component="td" sx={{ px: 2.5, py: 1.5, fontSize: 13, color: '#475569', borderBottom: '1px solid #EEF0F6' }}>{r.designation || '—'}</Box>
-                                        <Box component="td" sx={{ px: 2.5, py: 1.5, fontSize: 13, color: '#475569', borderBottom: '1px solid #EEF0F6', whiteSpace: 'nowrap' }}>{fmtDate(r.doj)}</Box>
+                                        <Box component="td" sx={{ px: 2.5, py: 1.5, fontSize: 13, color: '#475569', borderBottom: '1px solid #EEF0F6', whiteSpace: 'nowrap' }}>{fmtDate(r.dateOfJoining)}</Box>
                                         <Box component="td" sx={{ px: 2.5, py: 1.5, borderBottom: '1px solid #EEF0F6' }}>
-                                            <Chip label={resigned ? 'Resigned' : 'Active'} size="small" sx={{ height: 22, fontSize: 11, fontWeight: 700, bgcolor: resigned ? '#FEE2E2' : '#DCFCE7', color: resigned ? '#DC2626' : '#16A34A' }} />
+                                            <Chip label={active ? 'Active' : (r.status || 'Inactive')} size="small" sx={{ height: 22, fontSize: 11, fontWeight: 700, textTransform: 'capitalize', bgcolor: active ? '#DCFCE7' : '#FEE2E2', color: active ? '#16A34A' : '#DC2626' }} />
                                         </Box>
                                         <Box component="td" sx={{ px: 2.5, py: 1.5, borderBottom: '1px solid #EEF0F6', textAlign: 'right' }}>
                                             <Tooltip arrow title="View details">
@@ -197,17 +321,51 @@ export default function EmployeesPage() {
                             })}
                         </Box>
                     </Box>
-                    {filtered.length === 0 && (
+
+                    {!loading && loadError && (
+                        <Stack direction="row" spacing={1.3} sx={{ alignItems: 'center', p: 2.5, bgcolor: '#FEF2F2', borderTop: '1px solid #FECACA' }}>
+                            <ErrorOutlineRoundedIcon sx={{ fontSize: 22, color: '#B91C1C' }} />
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#991B1B' }}>Couldn't load employees</Typography>
+                                <Typography sx={{ fontSize: 12, color: '#B91C1C' }}>{loadError}</Typography>
+                            </Box>
+                            <Button onClick={load} startIcon={<RefreshRoundedIcon sx={{ fontSize: 17 }} />} sx={{ textTransform: 'none', fontWeight: 700, fontSize: 12.5, color: '#B91C1C', bgcolor: '#fff', border: '1px solid #FECACA', borderRadius: '7px', height: 38, px: 2, '&:hover': { bgcolor: '#FEE2E2' } }}>Retry</Button>
+                        </Stack>
+                    )}
+
+                    {!loading && !loadError && rows.length === 0 && (
                         <Box sx={{ textAlign: 'center', py: 6 }}>
                             <GroupsRoundedIcon sx={{ fontSize: 34, color: '#CBD2DD' }} />
-                            <Typography sx={{ fontSize: 14, color: '#98A0AE', mt: 1 }}>No employees match your search</Typography>
+                            <Typography sx={{ fontSize: 14, color: '#98A0AE', mt: 1 }}>
+                                {query ? 'No employees match your search' : 'No employees yet — onboard your first one'}
+                            </Typography>
                         </Box>
                     )}
                 </Box>
+
+                {/* Pagination — the API pages server-side, so this drives the request */}
+                {!loadError && total > 0 && (
+                    <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 1.6, borderTop: '1px solid #EEF0F6', bgcolor: '#FBFAFE', flexWrap: 'wrap', gap: 1 }}>
+                        <Typography sx={{ fontSize: 12.5, color: '#64748B' }}>
+                            Showing <strong>{from}–{to}</strong> of <strong>{total}</strong>
+                        </Typography>
+                        <Stack direction="row" spacing={0.8} sx={{ alignItems: 'center' }}>
+                            <IconButton size="small" disabled={loading || page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                sx={{ border: '1px solid #E6EAF1', borderRadius: '7px', bgcolor: '#fff', width: 32, height: 32 }}>
+                                <ChevronLeftRoundedIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                            <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#475569', px: 0.8 }}>Page {page} of {pageCount}</Typography>
+                            <IconButton size="small" disabled={loading || page >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                                sx={{ border: '1px solid #E6EAF1', borderRadius: '7px', bgcolor: '#fff', width: 32, height: 32 }}>
+                                <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                        </Stack>
+                    </Stack>
+                )}
             </Box>
 
-            <Snackbar open={Boolean(snack)} autoHideDuration={3000} onClose={() => setSnack('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
-                <Alert onClose={() => setSnack('')} severity="success" variant="filled" sx={{ borderRadius: '7px' }}>{snack}</Alert>
+            <Snackbar open={Boolean(snack.msg)} autoHideDuration={snack.severity === 'warning' ? 8000 : 3000} onClose={() => setSnack((s) => ({ ...s, msg: '' }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+                <Alert onClose={() => setSnack((s) => ({ ...s, msg: '' }))} severity={snack.severity} variant="filled" sx={{ borderRadius: '7px' }}>{snack.msg}</Alert>
             </Snackbar>
         </Box>
     );

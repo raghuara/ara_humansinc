@@ -1,17 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Box, Typography, Button, Grid, IconButton, Divider,
+    Box, Typography, Button, Grid, IconButton,
     TextField, Autocomplete, Tooltip,
     Dialog, CircularProgress, Chip,
-    FormControl, InputLabel, Select, MenuItem,
+    Select, MenuItem,
     Tabs, Tab,
     Accordion, AccordionSummary, AccordionDetails,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import SaveIcon from '@mui/icons-material/Save';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import GavelIcon from '@mui/icons-material/Gavel';
@@ -25,26 +23,26 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutlineRounded';
-import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import axios from 'axios';
+import http from '../../../Api/http';
 import SnackBar from '../../SnackBar';
 import AssignShiftsTab from './AssignShiftsTab';
 import LeaveTypesTab from './leaveMaster/LeaveTypesTab';
 import {
     Section, SubSection, ToggleRow, AmountField, NumberField, TimeField,
-    PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK, TOKEN,
+    PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK,
     FREQUENCY_TO_API, FREQUENCY_FROM_API,
     parseTimeToMinutes, formatTime12, formatHrs,
 } from './leaveMaster/LeaveMasterShared';
 import { selectWebsiteSettings } from '../../../redux/slices/websiteSettingsSlice';
-import { selectAcademicYear } from '../../../redux/slices/academicYearSlice';
+import useFinancialYear from '../../../hooks/useFinancialYear';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import LockIcon from '@mui/icons-material/Lock';
 import dayjs from 'dayjs';
-import { postleavepolicy, GetLeavePolicy, postworkingcalendar, GetWorkingcalendar } from '../../../Api/Api';
+import { selectFinancialYearConfig } from '../../../redux/slices/financialYearSlice';
+import { PostLeavePolicy, GetLeavePolicyByFinancialYear, PostWorkingCalendar, GetWorkingCalendar } from '../../../Api/Api';
 
 const PAYOUT_FREQUENCIES = ['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly'];
 
@@ -92,6 +90,75 @@ const BonusAmountField = ({ label, type, amount, onType, onAmount, helperText })
     </Box>
 );
 
+// PostLeavePolicy speaks enums, not the UI's internal keys.
+const AMOUNT_TYPE_TO_API = {
+    amount: 'FixedAmount',
+    half_day: 'HalfDaySalary',
+    full_day: 'FullDaySalary',
+};
+
+// The UI models late penalties as cumulative ceilings ("up to 20 min → ₹50",
+// "up to 60 → ₹100") plus a catch-all "beyond". The API wants explicit
+// non-overlapping ranges, with `toMinutes: null` marking the open-ended last
+// band. This is where one becomes the other.
+const buildLatePenaltySlabs = (slabs, beyond) => {
+    const out = [];
+    let from = 1;
+    (slabs || []).forEach((s) => {
+        const to = Number(s.uptoMinutes) || 0;
+        if (to < from) return;               // a ceiling below the previous band is not a range
+        out.push({
+            fromMinutes: from,
+            toMinutes: to,
+            deductType: 'FixedAmount',
+            deductAmount: Number(s.amount) || 0,
+            displayOrder: out.length,
+        });
+        from = to + 1;
+    });
+    if (beyond) {
+        const deductType = AMOUNT_TYPE_TO_API[beyond.type] || 'HalfDaySalary';
+        out.push({
+            fromMinutes: from,
+            toMinutes: null,                 // open-ended: everything past the last band
+            deductType,
+            deductAmount: deductType === 'FixedAmount' ? (Number(beyond.amount) || 0) : null,
+            displayOrder: out.length,
+        });
+    }
+    return out;
+};
+
+const AMOUNT_TYPE_FROM_API = Object.fromEntries(
+    Object.entries(AMOUNT_TYPE_TO_API).map(([k, v]) => [v, k])
+);
+
+// The inverse of buildLatePenaltySlabs: explicit API ranges back into the UI's
+// cumulative ceilings plus a single open-ended "beyond" rule. The band with
+// `toMinutes: null` is the beyond; the rest are ceilings in display order.
+const parseLatePenaltySlabs = (slabs) => {
+    const sorted = [...(slabs || [])].sort(
+        (a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0)
+    );
+    const bounded = sorted.filter((s) => s.toMinutes != null);
+    const openEnded = sorted.find((s) => s.toMinutes == null);
+
+    return {
+        slabs: bounded.length
+            ? bounded.map((s) => ({
+                uptoMinutes: Number(s.toMinutes) || 0,
+                amount: Number(s.deductAmount) || 0,
+            }))
+            : INITIAL_CONFIG.latePenaltySlabs,
+        beyond: openEnded
+            ? {
+                type: AMOUNT_TYPE_FROM_API[openEnded.deductType] || 'half_day',
+                amount: Number(openEnded.deductAmount) || 0,
+            }
+            : INITIAL_CONFIG.latePenaltyBeyond,
+    };
+};
+
 const DEDUCTION_APPLIED_TO_API = {
     'Same Month': 'SameMonth',
     'Next Month': 'NextMonth',
@@ -119,14 +186,6 @@ const DAY_TYPE_FROM_API = {
     Mandatory: 'mandatory',
 };
 
-const buildWeekPattern = (defaultWorkingDays = []) => {
-    const pattern = {};
-    WC_DAY_LABELS.forEach((label, idx) => {
-        pattern[label] = defaultWorkingDays.includes(idx) ? 'Working' : 'Holiday';
-    });
-    return pattern;
-};
-
 const parseWeekPattern = (pattern) => {
     if (!pattern || typeof pattern !== 'object') return null;
     const result = [];
@@ -144,16 +203,6 @@ const DEDUCTION_APPLIED_FROM_API = Object.fromEntries(
 const DEDUCTION_FORMULA_FROM_API = Object.fromEntries(
     Object.entries(DEDUCTION_FORMULA_TO_API).map(([k, v]) => [v, k])
 );
-
-const parseApiDate = (s) => {
-    if (!s || typeof s !== 'string') return null;
-    const parts = s.split('-');
-    if (parts.length !== 3) return null;
-    const [d, m, y] = parts;
-    const iso = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-    const parsed = dayjs(iso);
-    return parsed.isValid() ? parsed : null;
-};
 
 const INITIAL_CONFIG = {
     attendanceBonusEnabled: false,
@@ -214,21 +263,10 @@ const INITIAL_CONFIG = {
     defaultWorkingDays: [1, 2, 3, 4, 5, 6],
 };
 
-const getCurrentAcademicYear = () => {
-    const today = new Date();
-    const start = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
-    return `${start}-${start + 1}`;
-};
-
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
 ];
-const MONTH_NAMES_SHORT = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
-const computeEndMonth = (startMonth) => ((startMonth - 1 + 11) % 12) + 1;
 
 // Per-page header meta for the standalone (hideTabBar) Leave Policy routes.
 const LP_PAGES = [
@@ -240,14 +278,17 @@ const LP_PAGES = [
 
 
 export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }) {
-    const navigate = useNavigate();
     const isExpanded = useSelector((state) => state.sidebar.isExpanded);
     const authUser = useSelector((state) => state.auth);
     const websiteSettings = useSelector(selectWebsiteSettings);
     const [isSavingMaster, setIsSavingMaster] = useState(false);
     const [isLoadingMaster, setIsLoadingMaster] = useState(false);
 
-    const academicYear = useSelector(selectAcademicYear) || getCurrentAcademicYear();
+    // Everything on this screen is keyed by the company's financial year — the
+    // one showing in the header. '' until it has been configured, in which case
+    // nothing is fetched rather than fetching a guessed year.
+    const financialYear = useFinancialYear();
+    const fyConfig = useSelector(selectFinancialYearConfig);
 
     const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -340,10 +381,20 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
     const [autoRenew, setAutoRenew] = useState(true); // roll policy over into the next academic year
 
     const [hasExistingPolicy, setHasExistingPolicy] = useState(false);
+    // Audit trail from GetLeavePolicy — who saved this year's policy, and when.
+    const [policyMeta, setPolicyMeta] = useState(null);
 
     const [renewDialog, setRenewDialog] = useState({ open: false, prevPolicy: null, prevAY: null });
     const closeRenewDialog = () => setRenewDialog({ open: false, prevPolicy: null, prevAY: null });
-    const endMonth = computeEndMonth(startMonth); // still sent in the save payload (defaults to the academic-year cycle)
+
+    // The start month is no longer part of this payload — the Financial Year
+    // config owns it. It's still read here because the policy edit window opens
+    // in the first 20 days of it, and that gate must use the company's real
+    // start month rather than a second, drifting copy.
+    useEffect(() => {
+        const sm = Number(fyConfig?.startMonth);
+        if (sm >= 1 && sm <= 12) setStartMonth(sm);
+    }, [fyConfig?.startMonth]);
 
     const [calendarMonth, setCalendarMonth] = useState(dayjs());
     const [dayOverrides, setDayOverrides] = useState({});
@@ -351,6 +402,9 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
     const [dirtyMonths, setDirtyMonths] = useState({}); // { "2026-04": true } — local edits since last sync
     const [isSavingMonth, setIsSavingMonth] = useState(false);
     const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
+    // Day counts as the server tallied them for the saved month; null until this
+    // month has a record. Local counts are used for unsaved edits.
+    const [monthTotals, setMonthTotals] = useState(null);
 
     const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const DAY_COLORS = {
@@ -464,25 +518,20 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
             showSnack('You can only edit and save upcoming months. The current and past months are read-only.', false);
             return;
         }
-        if (!authUser?.rollNumber) {
-            showSnack('Cannot save: no logged-in user found.', false);
-            return;
-        }
 
+        // PostWorkingCalendar takes only the month itself — the server works out
+        // which financial year it falls in, so there's no year to send (and no
+        // way for the client to file a month under the wrong one).
         const body = {
-            academicYear,
             year: calendarMonth.year(),
             month: calendarMonth.month() + 1,        // dayjs month is 0-indexed
             weekPattern: buildMonthWeekPattern(calendarMonth),
             overrides: buildMonthOverrides(calendarMonth),
-            updatedByRollNumber: authUser.rollNumber,
         };
 
         setIsSavingMonth(true);
         try {
-            const res = await axios.post(postworkingcalendar, body, {
-                headers: { Authorization: `Bearer ${TOKEN}` },
-            });
+            const res = await http.post(PostWorkingCalendar, body);
             const ok = !res?.data || res.data.error === false;
             if (ok) {
                 const wasUpdate = !!savedMonths[calendarMonthKey];
@@ -493,11 +542,14 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                     || `Working calendar for ${calendarMonth.format('MMMM YYYY')} ${wasUpdate ? 'updated' : 'saved'} successfully`,
                     true
                 );
+                // Re-read so the day counts shown below come from the server's
+                // own tally rather than a local recount that could disagree.
+                fetchWorkingCalendar(calendarMonth);
             } else {
                 showSnack(res.data.message || 'Failed to save working calendar', false);
             }
         } catch (err) {
-            console.error('postworkingcalendar failed:', err);
+            console.error('PostWorkingCalendar failed:', err);
             const apiMsg = err?.response?.data?.message;
             showSnack(apiMsg || 'Failed to save working calendar. Please try again.', false);
         } finally {
@@ -506,6 +558,7 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
     };
 
     const fetchWorkingCalendar = async (monthDayjs) => {
+        if (!financialYear) return;
         const year = monthDayjs.year();
         const month = monthDayjs.month() + 1;
         const monthKey = monthDayjs.format('YYYY-MM');
@@ -513,6 +566,7 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
         const markNoRecord = () => {
             setSavedMonths(prev => { const n = { ...prev }; delete n[monthKey]; return n; });
             setDirtyMonths(prev => { const n = { ...prev }; delete n[monthKey]; return n; });
+            setMonthTotals(null);
             setDayOverrides(prev => {
                 const next = { ...prev };
                 let changed = false;
@@ -525,9 +579,9 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
 
         setIsLoadingCalendar(true);
         try {
-            const res = await axios.get(GetWorkingcalendar, {
-                params: { academicYear, year, month },
-                headers: { Authorization: `Bearer ${TOKEN}` },
+            // Only the month is sent — the server resolves the financial year.
+            const res = await http.get(GetWorkingCalendar, {
+                params: { year, month },
             });
 
             const d = res?.data?.data;
@@ -558,6 +612,14 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                     return next;
                 });
 
+                // The server counts the month for us; hold on to its numbers so the
+                // summary can show what was actually stored, not a local recount.
+                setMonthTotals({
+                    working: Number(d.workingDays) || 0,
+                    holiday: Number(d.holidayDays) || 0,
+                    mandatory: Number(d.mandatoryDays) || 0,
+                });
+
                 setSavedMonths(prev => ({ ...prev, [monthKey]: true }));
                 setDirtyMonths(prev => { const n = { ...prev }; delete n[monthKey]; return n; });
             } else {
@@ -565,9 +627,9 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
             }
         } catch (err) {
             if (err?.response?.status === 404) {
-                markNoRecord();
+                markNoRecord();   // this month simply hasn't been defined yet
             } else {
-                console.error('GetWorkingcalendar failed:', err);
+                console.error('GetWorkingCalendar failed:', err);
             }
         } finally {
             setIsLoadingCalendar(false);
@@ -576,18 +638,16 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
 
     useEffect(() => {
         fetchWorkingCalendar(calendarMonth);
-    }, [calendarMonthKey, academicYear]);
+    }, [calendarMonthKey, financialYear]);
 
     const probeNextMonthBadge = async () => {
         try {
             const probeMonth = dayjs().add(1, 'month').startOf('month');
-            const res = await axios.get(GetWorkingcalendar, {
+            const res = await http.get(GetWorkingCalendar, {
                 params: {
-                    academicYear,
                     year: probeMonth.year(),
                     month: probeMonth.month() + 1,
                 },
-                headers: { Authorization: `Bearer ${TOKEN}` },
             });
             const d = res?.data?.data;
             const hasWeekPattern = !!(d && d.weekPattern && Object.keys(d.weekPattern).length > 0);
@@ -608,14 +668,20 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
 
     useEffect(() => {
         probeNextMonthBadge();
-    }, [academicYear]);
+    }, [financialYear]);
 
     const calendarDays = getDaysInMonth();
-    const calendarStats = {
+    const localStats = {
         working: calendarDays.filter(d => getDayType(d) === 'working').length,
         holiday: calendarDays.filter(d => getDayType(d) === 'holiday').length,
         mandatory: calendarDays.filter(d => getDayType(d) === 'mandatory').length,
     };
+    // Show the server's own tally for a saved, unedited month — it's what payroll
+    // will actually compute against. Once there are unsaved edits the local count
+    // is the honest one, because the server hasn't seen those days yet.
+    const calendarStats = (monthTotals && isMonthSaved && !isMonthDirty)
+        ? monthTotals
+        : localStats;
 
     const toggleDefaultWorkingDay = (dayIndex) => {
         const current = config.defaultWorkingDays;
@@ -627,45 +693,49 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
         setDirtyMonths(prev => ({ ...prev, [calendarMonthKey]: true }));
     };
 
+    // GetLeavePolicy (financial-year keyed). The response mirrors the POST body,
+    // plus server-computed extras on each shift (totalShiftMinutes, …) which the
+    // UI recomputes itself and therefore ignores.
     const applyFetchedPolicy = (d) => {
         if (!d) return;
         setHasExistingPolicy(true);
+        setPolicyMeta({
+            createdBy: d.createdBy || '',
+            createdOn: d.createdOn || '',
+            updatedBy: d.updatedBy || '',
+            updatedOn: d.updatedOn || '',
+        });
 
+        if (typeof d.autoRenew === 'boolean') setAutoRenew(d.autoRenew);
 
-        const sm = Number(d.policyApplicabilityPeriod?.startMonth);
-        if (sm >= 1 && sm <= 12) setStartMonth(sm);
-        if (typeof d.policyApplicabilityPeriod?.autoRenew === 'boolean') {
-            setAutoRenew(d.policyApplicabilityPeriod.autoRenew);
-        }
+        const grace = Number(d.gracePeriodMinutes) || 0;
+        const penalty = parseLatePenaltySlabs(d.latePenalty?.slabs);
 
         setConfig(prev => ({
             ...prev,
 
+            gracePeriodMinutes: grace,
+
             attendanceBonusEnabled: !!d.attendanceBonus?.enabled,
-            attendanceBonusType: d.attendanceBonus?.amountType || 'amount',
+            attendanceBonusType: AMOUNT_TYPE_FROM_API[d.attendanceBonus?.amountType] || 'amount',
             attendanceBonusAmount: d.attendanceBonus?.amount != null ? String(d.attendanceBonus.amount) : '',
             minWorkingDaysForBonus: Number(d.attendanceBonus?.minWorkingDays) || 0,
             mustJoinFirstDay: !!d.attendanceBonus?.mustJoinFirstDay,
             mandatoryDayAttendanceRequired: !!d.attendanceBonus?.mandatoryDayRequired,
-            leaveDeductionStillApplies: !!d.attendanceBonus?.salaryDeductStillApplies,
 
             punctualityBonusEnabled: !!d.punctuality?.enabled,
-            punctualityBonusType: d.punctuality?.bonusAmountType || 'amount',
+            punctualityBonusType: AMOUNT_TYPE_FROM_API[d.punctuality?.bonusAmountType] || 'amount',
             punctualityBonusAmount: d.punctuality?.bonusAmount != null ? String(d.punctuality.bonusAmount) : '',
-            lateArrivalThresholdMinutes: Number(d.punctuality?.lateThresholdMinutes) || 15,
-            emergencyLatesPerMonth: Number(d.punctuality?.emergencyLatesAllowed) || 1,
+            emergencyLatesPerMonth: Number(d.punctuality?.latesAllowed) || 0,
             informedLeavesAllowed: Number(d.punctuality?.informedLeavesAllowed) || 0,
-            latePenaltyEnabled: !!d.punctuality?.latePenaltyEnabled,
-            latePenaltySlabs: Array.isArray(d.punctuality?.latePenaltySlabs) && d.punctuality.latePenaltySlabs.length
-                ? d.punctuality.latePenaltySlabs.map(s => ({ uptoMinutes: Number(s.uptoMinutes) || 0, amount: Number(s.amount) || 0 }))
-                : INITIAL_CONFIG.latePenaltySlabs,
-            latePenaltyBeyond: d.punctuality?.latePenaltyBeyond
-                ? { type: d.punctuality.latePenaltyBeyond.type || 'half_day', amount: Number(d.punctuality.latePenaltyBeyond.amount) || 0 }
-                : INITIAL_CONFIG.latePenaltyBeyond,
-            permissionDeductionEnabled: !!d.punctuality?.permissionDeductionEnabled,
-            permissionFreeHoursPerMonth: d.punctuality?.permissionFreeHoursPerMonth != null ? Number(d.punctuality.permissionFreeHoursPerMonth) : 3,
-            permissionAmountPerHour: d.punctuality?.permissionAmountPerHour != null ? String(d.punctuality.permissionAmountPerHour) : '',
-            uninformedLeaveDisqualifies: !!d.punctuality?.uninformedLeaveDisqualifies,
+
+            latePenaltyEnabled: !!d.latePenalty?.enabled,
+            latePenaltySlabs: penalty.slabs,
+            latePenaltyBeyond: penalty.beyond,
+
+            permissionDeductionEnabled: !!d.permissionDeduction?.enabled,
+            permissionFreeHoursPerMonth: d.permissionDeduction?.freeHoursPerMonth != null ? Number(d.permissionDeduction.freeHoursPerMonth) : 3,
+            permissionAmountPerHour: d.permissionDeduction?.amountPerHour != null ? String(d.permissionDeduction.amountPerHour) : '',
 
             deductionAppliesToPaidLeave: !!d.leaveSalaryDeduction?.appliesToPaidLeave,
             paidLeaveDeductionAppliedOn: DEDUCTION_APPLIED_FROM_API[d.leaveSalaryDeduction?.deductionAppliedWhen] || 'Same Month',
@@ -673,9 +743,10 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
             paidLeaveCreditBackOn: DEDUCTION_APPLIED_FROM_API[d.leaveSalaryDeduction?.creditBackWhen] || 'Next Month',
             deductionFormula: DEDUCTION_FORMULA_FROM_API[d.leaveSalaryDeduction?.formula] || 'gross_by_working_days',
 
-            bonusCalculationFrequency: FREQUENCY_FROM_API[d.bonusPayout?.calcFrequency] || 'Monthly',
-            bonusCreditFrequency: FREQUENCY_FROM_API[d.bonusPayout?.creditFrequency] || 'Quarterly',
+            bonusCreditFrequency: FREQUENCY_FROM_API[d.bonusPayout?.creditFrequency] || 'Monthly',
 
+            // Grace is a single company-wide value in this API, so each shift
+            // carries the same one — there is no per-shift grace to restore.
             shifts: Array.isArray(d.shifts) && d.shifts.length > 0
                 ? d.shifts
                     .slice()
@@ -685,80 +756,62 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                         shiftName: s.shiftName || '',
                         startTime: s.startTime || '08:00',
                         endTime: s.endTime || '16:00',
-                        gracePeriodMinutes: Number(s.gracePeriodMinutes) || 0,
+                        gracePeriodMinutes: grace,
                         lunchBreakMinutes: Number(s.lunchBreakMinutes) || 0,
-                        shortBreakMinutes: Number(s.shortBreakMinutes) || 0,
+                        shortBreakMinutes: Number(s.overallBreakMinutes) || 0,
                     }))
-                : (d.shiftTiming
-                    ? [{
-                        shiftName: 'Default Shift',
-                        startTime: d.shiftTiming.startTime || d.shiftTiming.shiftStartTime || '08:00',
-                        endTime: d.shiftTiming.endTime || d.shiftTiming.shiftEndTime || '16:00',
-                        gracePeriodMinutes: Number(d.shiftTiming.gracePeriodMinutes) || 0,
-                        lunchBreakMinutes: Number(d.shiftTiming.lunchBreakMinutes) || 0,
-                        shortBreakMinutes: Number(d.shiftTiming.shortBreakMinutes) || 0,
-                    }]
-                    : (prev.shifts || INITIAL_CONFIG.shifts)
-                ),
+                : (prev.shifts || INITIAL_CONFIG.shifts),
 
-            shiftStartTime: (d.shifts?.[0]?.startTime) || d.shiftTiming?.startTime || prev.shiftStartTime,
-            shiftEndTime: (d.shifts?.[0]?.endTime) || d.shiftTiming?.endTime || prev.shiftEndTime,
-            gracePeriodMinutes: Number(d.shifts?.[0]?.gracePeriodMinutes ?? d.shiftTiming?.gracePeriodMinutes) || 0,
-            lunchBreakMinutes: Number(d.shifts?.[0]?.lunchBreakMinutes ?? d.shiftTiming?.lunchBreakMinutes) || 0,
-            shortBreakMinutes: Number(d.shifts?.[0]?.shortBreakMinutes ?? d.shiftTiming?.shortBreakMinutes) || 0,
+            shiftStartTime: d.shifts?.[0]?.startTime || prev.shiftStartTime,
+            shiftEndTime: d.shifts?.[0]?.endTime || prev.shiftEndTime,
+            lunchBreakMinutes: Number(d.shifts?.[0]?.lunchBreakMinutes) || 0,
+            shortBreakMinutes: Number(d.shifts?.[0]?.overallBreakMinutes) || 0,
         }));
     };
 
-    const applyPolicyAsTemplate = (prevPolicy, targetAY) => {
+    const applyPolicyAsTemplate = (prevPolicy, targetFY) => {
         if (!prevPolicy) return;
-        applyFetchedPolicy({ ...prevPolicy, academicYear: targetAY });
+        applyFetchedPolicy({ ...prevPolicy, financialYear: targetFY });
     };
 
-    const buildPayloadFromPolicy = (prev, targetAY) => ({
-        academicYear: targetAY,
-        policyApplicabilityPeriod: {
-            startMonth: Number(prev.policyApplicabilityPeriod?.startMonth) || 4,
-            endMonth: Number(prev.policyApplicabilityPeriod?.endMonth) || 3,
-            autoRenew: !!prev.policyApplicabilityPeriod?.autoRenew,
-        },
-        shifts: Array.isArray(prev.shifts) && prev.shifts.length > 0
-            ? prev.shifts.map((s, i) => ({
-                shiftName: s.shiftName || `Shift ${i + 1}`,
-                startTime: s.startTime || '08:00',
-                endTime: s.endTime || '16:00',
-                gracePeriodMinutes: Number(s.gracePeriodMinutes) || 0,
-                lunchBreakMinutes: Number(s.lunchBreakMinutes) || 0,
-                shortBreakMinutes: Number(s.shortBreakMinutes) || 0,
-                displayOrder: i,
-            }))
-            : (prev.shiftTiming
-                ? [{
-                    shiftName: 'Default Shift',
-                    startTime: prev.shiftTiming.startTime || '08:00',
-                    endTime: prev.shiftTiming.endTime || '16:00',
-                    gracePeriodMinutes: Number(prev.shiftTiming.gracePeriodMinutes) || 0,
-                    lunchBreakMinutes: Number(prev.shiftTiming.lunchBreakMinutes) || 0,
-                    shortBreakMinutes: Number(prev.shiftTiming.shortBreakMinutes) || 0,
-                    displayOrder: 0,
-                }]
-                : []
-            ),
+    // A fetched policy is already in the POST shape — it just carries server-set
+    // ids and computed fields. Strip those and re-key it to the target year.
+    const buildPayloadFromPolicy = (prev, targetFY) => ({
+        financialYear: targetFY,
+        autoRenew: !!prev.autoRenew,
+        gracePeriodMinutes: Number(prev.gracePeriodMinutes) || 0,
+        shifts: (prev.shifts || []).map((s, i) => ({
+            shiftName: s.shiftName || `Shift ${i + 1}`,
+            startTime: s.startTime || '08:00',
+            endTime: s.endTime || '16:00',
+            lunchBreakMinutes: Number(s.lunchBreakMinutes) || 0,
+            overallBreakMinutes: Number(s.overallBreakMinutes) || 0,
+            displayOrder: i,
+        })),
         attendanceBonus: prev.attendanceBonus || {},
         punctuality: prev.punctuality || {},
+        latePenalty: {
+            enabled: !!prev.latePenalty?.enabled,
+            slabs: (prev.latePenalty?.slabs || []).map((s, i) => ({
+                fromMinutes: Number(s.fromMinutes) || 0,
+                toMinutes: s.toMinutes == null ? null : Number(s.toMinutes),
+                deductType: s.deductType,
+                deductAmount: s.deductAmount == null ? null : Number(s.deductAmount),
+                displayOrder: i,
+            })),
+        },
+        permissionDeduction: prev.permissionDeduction || {},
         leaveSalaryDeduction: prev.leaveSalaryDeduction || {},
         bonusPayout: prev.bonusPayout || {},
-        updatedByRollNumber: authUser?.rollNumber || '',
     });
 
-    const autoRenewPolicy = async (prevPolicy, targetAY) => {
+    const autoRenewPolicy = async (prevPolicy, targetFY) => {
         try {
-            const payload = buildPayloadFromPolicy(prevPolicy, targetAY);
-            const res = await axios.post(postleavepolicy, payload, {
-                headers: { Authorization: `Bearer ${TOKEN}` },
-            });
+            const payload = buildPayloadFromPolicy(prevPolicy, targetFY);
+            const res = await http.post(PostLeavePolicy, payload);
             if (res?.data?.error === false) {
-                applyPolicyAsTemplate(prevPolicy, targetAY);
-                showSnack(`Policy auto-renewed from ${prevPolicy.academicYear} for ${targetAY}`, true);
+                applyPolicyAsTemplate(prevPolicy, targetFY);
+                showSnack(`Policy auto-renewed from ${prevPolicy.financialYear} for ${targetFY}`, true);
             } else {
                 showSnack(res?.data?.message || 'Auto-renew failed — please save manually', false);
             }
@@ -768,37 +821,34 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
         }
     };
 
-    const checkAutoRenewWindow = async (ay) => {
+    // Only offered for the year the company is actually in, and only inside the
+    // first 20 days of its start month — the same window the policy itself is
+    // editable in.
+    const checkAutoRenewWindow = async (fy) => {
         const today = dayjs();
-        const currentAY = getCurrentAcademicYear();
-        if (ay !== currentAY) return;
+        if (!fy || fy !== fyConfig?.currentFinancialYear) return;
 
-        const [ysStr] = ay.split('-');
+        const [ysStr] = String(fy).split('-');
         const ys = parseInt(ysStr, 10);
         if (!Number.isFinite(ys)) return;
-        const prevAY = `${ys - 1}-${ys}`;
+        const prevFY = `${ys - 1}-${ys}`;
+
+        const sm = Number(fyConfig?.startMonth);
+        if (!(sm >= 1 && sm <= 12)) return;
+        const inWindow = today.month() + 1 === sm && today.date() <= 20;
+        if (!inWindow) return;
 
         try {
-            const res = await axios.get(GetLeavePolicy, {
-                params: { academicYear: prevAY },
-                headers: { Authorization: `Bearer ${TOKEN}` },
+            const res = await http.get(GetLeavePolicyByFinancialYear, {
+                params: { financialYear: prevFY },
             });
             if (!res?.data || res.data.error !== false || !res.data.data) return;
 
             const prevPolicy = res.data.data;
-            const prevStartMonth = Number(prevPolicy.policyApplicabilityPeriod?.startMonth);
-            if (!(prevStartMonth >= 1 && prevStartMonth <= 12)) return;
-
-            const todayMonth = today.month() + 1;
-            const todayDay = today.date();
-            const inWindow = todayMonth === prevStartMonth && todayDay <= 20;
-            if (!inWindow) return;
-
-            const prevAutoRenew = !!prevPolicy.policyApplicabilityPeriod?.autoRenew;
-            if (prevAutoRenew) {
-                await autoRenewPolicy(prevPolicy, ay);
+            if (prevPolicy.autoRenew) {
+                await autoRenewPolicy(prevPolicy, fy);
             } else {
-                setRenewDialog({ open: true, prevPolicy, prevAY });
+                setRenewDialog({ open: true, prevPolicy, prevAY: prevFY });
             }
         } catch (err) {
             if (err?.response?.status !== 404) {
@@ -809,7 +859,7 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
 
     const handleRestorePrev = () => {
         if (renewDialog.prevPolicy) {
-            applyPolicyAsTemplate(renewDialog.prevPolicy, academicYear);
+            applyPolicyAsTemplate(renewDialog.prevPolicy, financialYear);
             showSnack(`Restored policy from ${renewDialog.prevAY}. Review and save.`, true);
         }
         closeRenewDialog();
@@ -817,36 +867,34 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
 
     const handleCreateNewPolicy = () => {
         setConfig({ ...INITIAL_CONFIG });
-        setStartMonth(4);
         setAutoRenew(true);
         closeRenewDialog();
     };
 
+    const resetToBlankPolicy = (fy) => {
+        setConfig({ ...INITIAL_CONFIG });
+        setAutoRenew(true);
+        setHasExistingPolicy(false);
+        setPolicyMeta(null);
+        checkAutoRenewWindow(fy);
+    };
+
     const fetchLeavePolicy = async (year) => {
-        const ay = year || academicYear;
-        if (!ay) return;
+        const fy = year || financialYear;
+        if (!fy) return;
         setIsLoadingMaster(true);
         try {
-            const res = await axios.get(GetLeavePolicy, {
-                params: { academicYear: ay },
-                headers: { Authorization: `Bearer ${TOKEN}` },
+            const res = await http.get(GetLeavePolicyByFinancialYear, {
+                params: { financialYear: fy },
             });
             if (res?.data && res.data.error === false && res.data.data) {
                 applyFetchedPolicy(res.data.data);
             } else {
-                setConfig({ ...INITIAL_CONFIG });
-                setStartMonth(4);
-                setAutoRenew(true);
-                setHasExistingPolicy(false);
-                checkAutoRenewWindow(ay);
+                resetToBlankPolicy(fy);
             }
         } catch (err) {
             if (err?.response?.status === 404) {
-                setConfig({ ...INITIAL_CONFIG });
-                setStartMonth(4);
-                setAutoRenew(true);
-                setHasExistingPolicy(false);
-                checkAutoRenewWindow(ay);
+                resetToBlankPolicy(fy);   // no policy for this year yet — not an error
             } else {
                 console.error('GetLeavePolicy failed:', err);
                 showSnack('Failed to load existing leave policy', false);
@@ -856,79 +904,79 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
         }
     };
 
+    // Refetches when the header's financial year changes, so switching year
+    // shows that year's policy rather than the one already on screen.
     useEffect(() => {
-        fetchLeavePolicy(academicYear);
-    }, [academicYear]);
+        fetchLeavePolicy(financialYear);
+    }, [financialYear]);
 
+    // PostLeavePolicy. Keyed by the company's financial year (not an academic
+    // year), with the grace period global rather than per-shift, and late
+    // penalties / permission deductions promoted to their own objects.
     const buildLeavePolicyPayload = () => ({
-        academicYear,
-        policyApplicabilityPeriod: {
-            startMonth: Number(startMonth),
-            endMonth: Number(endMonth),
-            autoRenew: !!autoRenew,
-        },
+        financialYear,
+        autoRenew: !!autoRenew,
+        gracePeriodMinutes: Number(config.gracePeriodMinutes) || 0,
+
         shifts: (config.shifts || []).map((s, i) => ({
             shiftName: (s.shiftName || `Shift ${i + 1}`).trim(),
             startTime: s.startTime || '',
             endTime: s.endTime || '',
-            gracePeriodMinutes: Number(config.gracePeriodMinutes) || 0,
             lunchBreakMinutes: Number(s.lunchBreakMinutes) || 0,
-            shortBreakMinutes: Number(s.shortBreakMinutes) || 0,
+            overallBreakMinutes: Number(s.shortBreakMinutes) || 0,
             displayOrder: i,
         })),
+
         attendanceBonus: {
             enabled: !!config.attendanceBonusEnabled,
-            amountType: config.attendanceBonusType || 'amount',
-            amount: config.attendanceBonusType === 'amount' ? (Number(config.attendanceBonusAmount) || 0) : 0,
+            amountType: AMOUNT_TYPE_TO_API[config.attendanceBonusType] || 'FixedAmount',
+            amount: config.attendanceBonusType === 'amount' ? (Number(config.attendanceBonusAmount) || 0) : null,
             minWorkingDays: Number(config.minWorkingDaysForBonus) || 0,
             mustJoinFirstDay: !!config.mustJoinFirstDay,
             mandatoryDayRequired: !!config.mandatoryDayAttendanceRequired,
-            salaryDeductStillApplies: !!config.leaveDeductionStillApplies,
         },
+
         punctuality: {
             enabled: !!config.punctualityBonusEnabled,
-            bonusAmountType: config.punctualityBonusType || 'amount',
-            bonusAmount: config.punctualityBonusType === 'amount' ? (Number(config.punctualityBonusAmount) || 0) : 0,
-            lateThresholdMinutes: Number(config.lateArrivalThresholdMinutes) || 0,
-            emergencyLatesAllowed: Number(config.emergencyLatesPerMonth) || 0,
+            bonusAmountType: AMOUNT_TYPE_TO_API[config.punctualityBonusType] || 'FixedAmount',
+            bonusAmount: config.punctualityBonusType === 'amount' ? (Number(config.punctualityBonusAmount) || 0) : null,
+            latesAllowed: Number(config.emergencyLatesPerMonth) || 0,
             informedLeavesAllowed: Number(config.informedLeavesAllowed) || 0,
-            latePenaltyEnabled: !!config.latePenaltyEnabled,
-            latePenaltySlabs: config.latePenaltyEnabled
-                ? (config.latePenaltySlabs || []).map(s => ({ uptoMinutes: Number(s.uptoMinutes) || 0, amount: Number(s.amount) || 0 }))
-                : [],
-            latePenaltyBeyond: config.latePenaltyEnabled
-                ? { type: config.latePenaltyBeyond?.type || 'half_day', amount: Number(config.latePenaltyBeyond?.amount) || 0 }
-                : null,
-            permissionDeductionEnabled: !!config.permissionDeductionEnabled,
-            permissionFreeHoursPerMonth: config.permissionDeductionEnabled ? (Number(config.permissionFreeHoursPerMonth) || 0) : 0,
-            permissionAmountPerHour: config.permissionDeductionEnabled ? (Number(config.permissionAmountPerHour) || 0) : 0,
-            uninformedLeaveDisqualifies: !!config.uninformedLeaveDisqualifies,
         },
+
+        latePenalty: {
+            enabled: !!config.latePenaltyEnabled,
+            slabs: config.latePenaltyEnabled
+                ? buildLatePenaltySlabs(config.latePenaltySlabs, config.latePenaltyBeyond)
+                : [],
+        },
+
+        permissionDeduction: {
+            enabled: !!config.permissionDeductionEnabled,
+            freeHoursPerMonth: config.permissionDeductionEnabled ? (Number(config.permissionFreeHoursPerMonth) || 0) : 0,
+            amountPerHour: config.permissionDeductionEnabled ? (Number(config.permissionAmountPerHour) || 0) : 0,
+        },
+
         leaveSalaryDeduction: {
             appliesToPaidLeave: !!config.deductionAppliesToPaidLeave,
             deductionAppliedWhen: DEDUCTION_APPLIED_TO_API[config.paidLeaveDeductionAppliedOn] || 'SameMonth',
             creditBackEnabled: !!config.paidLeaveCreditBackEnabled,
-            creditBackWhen: DEDUCTION_APPLIED_TO_API[config.paidLeaveCreditBackOn] || 'NextMonth',
+            // Null, not a stale month, when credit-back is off — otherwise the
+            // API stores a rule that the toggle says isn't in force.
+            creditBackWhen: config.paidLeaveCreditBackEnabled
+                ? (DEDUCTION_APPLIED_TO_API[config.paidLeaveCreditBackOn] || 'NextMonth')
+                : null,
             formula: DEDUCTION_FORMULA_TO_API[config.deductionFormula] || 'GrossWorkingDays',
         },
+
         bonusPayout: {
-            calcFrequency: FREQUENCY_TO_API[config.bonusCalculationFrequency] || 'Monthly',
-            creditFrequency: FREQUENCY_TO_API[config.bonusCreditFrequency] || 'Quarterly',
+            creditFrequency: FREQUENCY_TO_API[config.bonusCreditFrequency] || 'Monthly',
         },
-        updatedByRollNumber: authUser?.rollNumber || '',
     });
 
     const validateLeavePolicyPayload = () => {
-        if (!authUser?.rollNumber) {
-            showSnack('Cannot save: no logged-in user found.', false);
-            return false;
-        }
-        if (!startMonth || startMonth < 1 || startMonth > 12) {
-            showSnack('Please choose a valid start month for the policy.', false);
-            return false;
-        }
-        if (!academicYear) {
-            showSnack('Please choose the academic year first.', false);
+        if (!financialYear) {
+            showSnack('Set the financial year first — the policy is saved against it.', false);
             return false;
         }
         if (config.attendanceBonusEnabled && config.attendanceBonusType === 'amount' && (Number(config.attendanceBonusAmount) || 0) <= 0) {
@@ -947,9 +995,7 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
         const payload = buildLeavePolicyPayload();
         setIsSavingMaster(true);
         try {
-            const res = await axios.post(postleavepolicy, payload, {
-                headers: { Authorization: `Bearer ${TOKEN}` },
-            });
+            const res = await http.post(PostLeavePolicy, payload);
             if (res?.data && res.data.error === false) {
                 showSnack(res.data.message || 'Leave policy saved successfully', true);
                 setHasExistingPolicy(true);
@@ -976,12 +1022,36 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
             <Box sx={{ width: '100%' }}>
                 {hideTabBar ? (
                     <Box sx={{ px: 2, pt: 2, pb: 0.5 }}>
-                        <Typography sx={{ fontSize: 24, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
-                            {LP_PAGES[activeTab]?.title}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, flexWrap: 'wrap' }}>
+                            <Typography sx={{ fontSize: 24, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
+                                {LP_PAGES[activeTab]?.title}
+                            </Typography>
+                            {financialYear && (
+                                <Chip
+                                    label={financialYear}
+                                    size="small"
+                                    sx={{ height: 22, fontSize: 11, fontWeight: 800, bgcolor: PRIMARY_LIGHT, color: PRIMARY, border: `1px solid ${PRIMARY}40` }}
+                                />
+                            )}
+                            {!isLoadingMaster && activeTab === 0 && !hasExistingPolicy && (
+                                <Chip
+                                    label="Not saved yet"
+                                    size="small"
+                                    sx={{ height: 22, fontSize: 11, fontWeight: 700, bgcolor: '#FFF7ED', color: '#B45309', border: '1px solid #FED7AA' }}
+                                />
+                            )}
+                        </Box>
                         <Typography sx={{ fontSize: 13, color: '#6B7280', mt: 0.3 }}>
                             {isLoadingMaster ? 'Loading…' : LP_PAGES[activeTab]?.subtitle}
                         </Typography>
+                        {/* Audit trail — who last touched this year's policy. */}
+                        {!isLoadingMaster && activeTab === 0 && policyMeta?.createdOn && (
+                            <Typography sx={{ fontSize: 11.5, color: '#98A0AE', mt: 0.4 }}>
+                                {policyMeta.updatedOn
+                                    ? `Last updated by ${policyMeta.updatedBy || 'someone'} on ${policyMeta.updatedOn}`
+                                    : `Created by ${policyMeta.createdBy || 'someone'} on ${policyMeta.createdOn}`}
+                            </Typography>
+                        )}
                     </Box>
                 ) : (
                 <Box sx={{
@@ -1998,7 +2068,7 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
 
                     {activeTab === 1 && (
                         <LeaveTypesTab
-                            academicYear={academicYear}
+                            financialYear={financialYear}
                             authUser={authUser}
                             showSnack={showSnack}
                         />
@@ -2313,7 +2383,7 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                         <AssignShiftsTab
                             shifts={config.shifts || []}
                             websiteSettings={websiteSettings}
-                            academicYear={academicYear}
+                            financialYear={financialYear}
                             showSnack={showSnack}
                         />
                     )}
@@ -2336,10 +2406,10 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                 }}>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography sx={{ fontSize: 15, fontWeight: 800, color: '#0F172A', lineHeight: 1.1 }}>
-                            New Academic Year Detected
+                            New Financial Year Detected
                         </Typography>
                         <Typography sx={{ fontSize: 11, color: '#6B7280', mt: 0.2 }}>
-                            No policy yet for <strong>{academicYear}</strong>
+                            No policy yet for <strong>{financialYear}</strong>
                         </Typography>
                     </Box>
                     <IconButton size="small" onClick={closeRenewDialog} sx={{ width: 28, height: 28 }}>

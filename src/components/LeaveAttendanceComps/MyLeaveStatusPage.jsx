@@ -12,11 +12,11 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import HistoryToggleOffIcon from '@mui/icons-material/HistoryToggleOff';
 import InboxIcon from '@mui/icons-material/Inbox';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
-import axios from 'axios';
+import http from '../../Api/http';
 import { useSelector } from 'react-redux';
 import { getLeaveApprovalDashboard } from '../../Api/Api';
+import useFinancialYear from '../../hooks/useFinancialYear';
 
-const token = '123';
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
 const PRIMARY_DARK = '#6246E0';
@@ -40,14 +40,6 @@ const LEAVE_TYPE_STYLE = {
 };
 
 const normaliseStatus = (s) => STATUS_META[s]?.label || s || 'Pending';
-
-// Academic year window (April → March) — matches the rest of the module.
-const getCurrentAcademicYear = () => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    return m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
-};
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -76,6 +68,7 @@ const sortKey = (raw) => {
 
 export default function MyLeaveStatusPage() {
     const user = useSelector((state) => state.auth);
+    const financialYear = useFinancialYear();
     const rollNumber = user?.rollNumber;
     const userType = user?.userType;
     const isSuperAdmin = userType === 'superadmin';
@@ -92,15 +85,16 @@ export default function MyLeaveStatusPage() {
     // Each row already includes its `status`, so we just concat the 3 arrays
     // and filter to the logged-in user's own leaves (forRollNumber match).
     const fetchMyLeaves = async () => {
-        if (!rollNumber) return;
+        if (!rollNumber || !financialYear) return;
         setIsFetching(true);
         try {
-            const res = await axios.get(getLeaveApprovalDashboard, {
+            // `AcademicYear` is still the field name on this legacy endpoint; the
+            // value is the company's financial year.
+            const res = await http.get(getLeaveApprovalDashboard, {
                 params: {
                     RollNumber: rollNumber,
-                    AcademicYear: getCurrentAcademicYear(),
+                    AcademicYear: financialYear,
                 },
-                headers: { Authorization: `Bearer ${token}` },
             });
             const data = res?.data || {};
             if (data.error) {
@@ -139,7 +133,7 @@ export default function MyLeaveStatusPage() {
         if (isSuperAdmin) return;
         fetchMyLeaves();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rollNumber, isSuperAdmin]);
+    }, [rollNumber, isSuperAdmin, financialYear]);
 
     // Sort newest-first when an applied date exists. Dates from the API are
     // DD-MM-YYYY, so convert to YYYY-MM-DD via sortKey for correct ordering.

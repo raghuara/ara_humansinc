@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Box, Typography, TextField, Button, Grid, IconButton, Divider,
-    Card, CardContent, Table, TableBody, TableCell, TableContainer,
-    TableHead, TableRow, Chip, InputAdornment, Dialog, DialogTitle,
+    Box, Typography, TextField, Button, Grid, IconButton,
+    Card, Table, TableBody, TableCell, TableContainer,
+    TableHead, TableRow, Chip, InputAdornment, Dialog,
     DialogContent, DialogActions, Avatar, Autocomplete, Paper, Tooltip,
-    CircularProgress, Stack, LinearProgress,
+    CircularProgress,
 } from '@mui/material';
-import axios from 'axios';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import http from '../../../Api/http';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -24,7 +23,6 @@ import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutlineRounded';
 import DownloadIcon from '@mui/icons-material/Download';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import { useNavigate } from 'react-router-dom';
 import SnackBar from '../../SnackBar';
 import {
     getEmployees, postSalaryStructure, salaryStructureDashboard,
@@ -51,8 +49,6 @@ const getInitials = (name = '') =>
 const formatINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function SalaryStructures() {
-    const navigate = useNavigate();
-    const token = "123";
 
     const [structures, setStructures] = useState([]);
     const [kpiData, setKpiData] = useState({ totalStructures: 0, totalEmployees: 0 });
@@ -75,7 +71,6 @@ export default function SalaryStructures() {
     const [filterText, setFilterText] = useState('');
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [structureToDelete, setStructureToDelete] = useState(null);
-    const isExpanded = useSelector((state) => state.sidebar.isExpanded);
     const websiteSettings = useSelector(selectWebsiteSettings);
 
     const [formData, setFormData] = useState({
@@ -147,9 +142,7 @@ export default function SalaryStructures() {
 
     const fetchEmployeeData = async () => {
         try {
-            const res = await axios.get(getEmployees, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.get(getEmployees);
             setEmployeesData(res.data.data);
         } catch {
         }
@@ -158,9 +151,7 @@ export default function SalaryStructures() {
     const fetchDashboard = async (silent = false) => {
         if (!silent) setIsLoading(true);
         try {
-            const res = await axios.get(salaryStructureDashboard, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.get(salaryStructureDashboard);
             if (res.data && !res.data.error) {
                 const { totalStructures, totalEmployees, salaryStructures } = res.data.data;
                 setKpiData({ totalStructures, totalEmployees });
@@ -197,9 +188,7 @@ export default function SalaryStructures() {
 
             setIsSaving(true);
             try {
-                const res = await axios.put(updateSalaryStructureByRollnumber, body, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await http.put(updateSalaryStructureByRollnumber, body);
 
                 if (res.data && !res.data.error) {
                     await fetchDashboard();
@@ -228,9 +217,7 @@ export default function SalaryStructures() {
 
         setIsSaving(true);
         try {
-            const res = await axios.post(postSalaryStructure, body, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.post(postSalaryStructure, body);
 
             if (res.data && !res.data.error) {
                 await fetchDashboard();
@@ -253,8 +240,7 @@ export default function SalaryStructures() {
             return;
         }
         try {
-            const res = await axios.delete(deleteSalaryStructureByRollnumber, {
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await http.delete(deleteSalaryStructureByRollnumber, {
                 params: { rollNumber: rollNo },
             });
 

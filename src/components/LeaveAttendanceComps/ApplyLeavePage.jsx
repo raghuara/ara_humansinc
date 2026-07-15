@@ -1,10 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
     Box, Grid, Typography, IconButton, Button, Chip, TextField, Select, MenuItem,
-    FormControl, InputLabel, CircularProgress, Checkbox, FormControlLabel, Divider,
+    FormControl, InputLabel, CircularProgress, Checkbox, FormControlLabel,
     Drawer, LinearProgress,
 } from '@mui/material';
-import EventIcon from '@mui/icons-material/Event';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -14,12 +13,12 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import dayjs from 'dayjs';
-import axios from 'axios';
+import http from '../../Api/http';
 import { useSelector } from 'react-redux';
-import { postLeaveRequest, GetEmployeeLeaveBalance, GetWorkingcalendar, GetleaveTypes } from '../../Api/Api';
+import { postLeaveRequest, GetEmployeeLeaveBalance, GetWorkingCalendar, GetLeaveTypes } from '../../Api/Api';
+import useFinancialYear from '../../hooks/useFinancialYear';
 import SnackBar from '../SnackBar';
 
-const token = '123';
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
 const PRIMARY_DARK = '#6246E0';
@@ -70,14 +69,6 @@ const LEAVE_TYPE_RULES = {
     'Paternity Leave':  { blockContinuousLeave: false, requiresDocument: true,  documentHint: 'Upload birth certificate or hospital document',             maxPerMonth: 0 },
     'Annual Leave':     { blockContinuousLeave: false, requiresDocument: false, documentHint: '',                                                          maxPerMonth: 0 },
     'Unpaid Leave':     { blockContinuousLeave: false, requiresDocument: false, documentHint: '',                                                          maxPerMonth: 0 },
-};
-
-// Current academic year (Apr–Mar window). Before April we're still in the previous year's cycle.
-const getCurrentAcademicYear = () => {
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = today.getMonth() + 1;
-    return m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
 };
 
 // Stable colour for each leave type based on its id.
@@ -221,7 +212,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
     const [balanceLoading, setBalanceLoading] = useState(false);
     const [balanceTypes, setBalanceTypes] = useState([]);
     const [balanceAsOf, setBalanceAsOf] = useState(dayjs().format('D MMM YYYY'));
-    const academicYear = useMemo(() => getCurrentAcademicYear(), []);
+    const financialYear = useFinancialYear();
 
     // Fetch the logged-in user's leave balance for the current academic year.
     // API returns `leaves[]` — each leave has top-level `remaining` plus a
@@ -233,9 +224,8 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
         if (!rollNumber) return;
         setBalanceLoading(true);
         try {
-            const res = await axios.get(GetEmployeeLeaveBalance, {
-                params: { academicYear, rollNumber },
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await http.get(GetEmployeeLeaveBalance, {
+                params: { financialYear, rollNumber },
             });
             if (res?.data?.error) {
                 setBalanceTypes([]);
@@ -279,7 +269,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
                     name: d.leaveTypeName || 'Leave',
                     shortCode: shortCodeFor(d.leaveTypeName),
                     color: colorForLeaveType(d.leaveTypeId),
-                    academicYear: d.academicYear,
+                    financialYear: d.financialYear || d.academicYear,
                     allocationPeriod: d.allocationPeriod || d.perPeriod?.allocationPeriod || 'Yearly',
                     perPeriodCap: Number(d.perPeriod?.cap) || 0,
                     periods,
@@ -302,7 +292,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
     useEffect(() => {
         fetchLeaveBalance();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rollNumber, academicYear]);
+    }, [rollNumber, financialYear]);
 
     // ─── Leave Type Rules fetch (hydrates the state declared above) ───────
     // GET /GetleaveTypes?academicYear=<year>
@@ -315,9 +305,8 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
         let cancelled = false;
         (async () => {
             try {
-                const res = await axios.get(GetleaveTypes, {
-                    params: { academicYear },
-                    headers: { Authorization: `Bearer ${token}` },
+                const res = await http.get(GetLeaveTypes, {
+                    params: { financialYear },
                 });
                 if (cancelled) return;
                 if (res?.data?.error) {
@@ -345,7 +334,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
             }
         })();
         return () => { cancelled = true; };
-    }, [academicYear]);
+    }, [financialYear]);
 
     // Hardcoded "Others (Loss of Pay)" — always available as a fallback when an
     // employee has exhausted their allocated balance but still needs to take leave.
@@ -419,9 +408,9 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
         loadedMonthsRef.current.add(key);
         setIsCalendarLoading(true);
         try {
-            const res = await axios.get(GetWorkingcalendar, {
-                params: { academicYear, year: month.year(), month: month.month() + 1 },
-                headers: { Authorization: `Bearer ${token}` },
+            // Only the month is sent — the server resolves the financial year.
+            const res = await http.get(GetWorkingCalendar, {
+                params: { year: month.year(), month: month.month() + 1 },
             });
             const d = res?.data?.data;
             const hasRecord = res?.data?.error === false && d && (
@@ -480,7 +469,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
         } finally {
             setIsCalendarLoading(false);
         }
-    }, [academicYear]);
+    }, [financialYear]);
 
     // Resolve a date's working/holiday/mandatory type from the cached calendar.
     // Falls back to the default Mon-Sat working week when the month hasn't
@@ -731,7 +720,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
             : form.leaveType;
 
         fd.append('ForRollNumber',    String(rollNumber || ''));
-        fd.append('AcademicYear',     academicYear);
+        fd.append('AcademicYear',     financialYear);   // legacy field name; value is the financial year
         fd.append('LeaveTypeId',      String(selectedLeaveOption?.leaveTypeId ?? ''));
         fd.append('LeaveType',        leaveTypeForApi);
         fd.append('FromDate',         formatDateForApi(startStr));   // DD-MM-YYYY
@@ -749,9 +738,8 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
 
         setIsSubmitting(true);
         try {
-            await axios.post(postLeaveRequest, fd, {
+            await http.post(postLeaveRequest, fd, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
                     // Let axios set the multipart boundary itself.
                     'Content-Type': 'multipart/form-data',
                 },
@@ -1653,7 +1641,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
                                 My Leave Balance
                             </Typography>
                             <Typography sx={{ fontSize: 11, color: '#5B7A6E' }} noWrap>
-                                {(user?.name || rollNumber || 'You')} · AY {academicYear} · As of {balanceAsOf}
+                                {(user?.name || rollNumber || 'You')} · FY {financialYear} · As of {balanceAsOf}
                             </Typography>
                         </Box>
                     </Box>
@@ -1674,7 +1662,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
                                 No leave balance found
                             </Typography>
                             <Typography sx={{ fontSize: 11, color: '#9CA3AF', mt: 0.4 }}>
-                                Your HR admin has not allocated any leave for {academicYear} yet.
+                                Your HR admin has not allocated any leave for {financialYear} yet.
                             </Typography>
                         </Box>
                     ) : balanceTypes.map(t => {
@@ -1716,7 +1704,7 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
                                             />
                                         </Box>
                                         <Typography sx={{ fontSize: 10, color: '#6B7280' }} noWrap>
-                                            AY {t.academicYear}
+                                            FY {t.financialYear}
                                             {t.currentPeriod && ` · ${shortenPeriodLabel(t.currentPeriod.label, t.allocationPeriod)} active`}
                                         </Typography>
                                     </Box>

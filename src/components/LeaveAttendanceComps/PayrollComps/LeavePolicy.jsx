@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Box, Typography, Button, Grid, IconButton, Divider,
-    Dialog, TextField, Switch, CircularProgress, Autocomplete, Chip, Tooltip,
+    Box, Typography, Button, Grid, IconButton,
+    Dialog, TextField, Switch, CircularProgress, Autocomplete, Chip,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
@@ -16,7 +16,7 @@ import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import PaidIcon from '@mui/icons-material/Paid';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import axios from 'axios';
+import http from '../../../Api/http';
 import SnackBar from '../../SnackBar';
 import { leavePolicyDashboard, postLeaveType, updateLeaveTypeById } from '../../../Api/Api';
 
@@ -48,7 +48,6 @@ const emptyForm = {
 
 export default function LeavePolicy() {
     const navigate = useNavigate();
-    const token = "123";
     const isExpanded = useSelector((state) => state.sidebar.isExpanded);
 
     const [policies, setPolicies] = useState([]);
@@ -78,9 +77,7 @@ export default function LeavePolicy() {
     const fetchLeavePolicies = async () => {
         setIsLoading(true);
         try {
-            const res = await axios.get(leavePolicyDashboard, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.get(leavePolicyDashboard);
             if (res.data && !res.data.error) {
                 const d = res.data.data;
                 setApiStats({
@@ -156,9 +153,7 @@ export default function LeavePolicy() {
         setIsSaving(true);
         try {
             if (editingPolicy) {
-                const res = await axios.put(updateLeaveTypeById, { ...body, id: editingPolicy.id }, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await http.put(updateLeaveTypeById, { ...body, id: editingPolicy.id });
                 if (res.data && !res.data.error) {
                     showSnack('Leave type updated successfully!', true);
                     setDialogOpen(false);
@@ -167,9 +162,7 @@ export default function LeavePolicy() {
                     showSnack(res.data?.message || 'Failed to update leave type', false);
                 }
             } else {
-                const res = await axios.post(postLeaveType, body, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await http.post(postLeaveType, body);
                 if (res.data && !res.data.error) {
                     showSnack('Leave type added successfully!', true);
                     setDialogOpen(false);

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import {
     Box, Card, CardContent, Grid, Typography, IconButton, Button, Chip,
     Avatar, TextField, InputAdornment, CircularProgress, Tooltip,
-    Dialog, DialogContent, DialogActions, Checkbox, Select, MenuItem,
+    Dialog, DialogContent, DialogActions, Checkbox,
 } from '@mui/material';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import { List } from 'react-window';
@@ -19,13 +19,13 @@ import LinkOffIcon from '@mui/icons-material/LinkOff';
 import HistoryIcon from '@mui/icons-material/History';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import GroupsIcon from '@mui/icons-material/Groups';
-import axios from 'axios';
+import http from '../../Api/http';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import SnackBar from '../SnackBar';
 import { GetBiometricMappings, PostBiometricMappings, UpdateBiometricMappings } from '../../Api/Api';
+import useFinancialYear from '../../hooks/useFinancialYear';
 
-const token = '123';
 
 // ─── Theme (matches Leave & Attendance) ────────────────────────────────────
 const PRIMARY = '#7C5CFC';
@@ -41,21 +41,18 @@ const avatarColorFor = (name = '') => {
 const getInitials = (name = '') =>
     name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
-// Academic-year window matches the rest of the Leave & Attendance module.
-const getCurrentAcademicYear = () => {
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = today.getMonth() + 1;
-    return m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
-};
-
 // Normalize one item from /GetBiometricMappings into the flat row shape the
 // page uses. The API returns `biometricEmployeeId` (string|null) + a derived
 // `status` ('Mapped' / 'Unmapped'). We keep `userType` because the POST/PUT
 // payload requires it per row.
-const normalizeEmployee = (emp) => ({
-    id: emp.rollNumber || emp.id,
-    rollNumber: emp.rollNumber || '',
+const normalizeEmployee = (emp) => {
+    // The row is keyed by the employee's code. GetBiometricMappings calls it
+    // `employeeCode`; older shapes used `rollNumber`/`id` — accept any of them so
+    // rows never collapse onto an empty key.
+    const code = emp.rollNumber || emp.employeeCode || emp.id || '';
+    return {
+    id: code,
+    rollNumber: code,
     name: emp.name || emp.fullName || '',
     designation: emp.designation || emp.role || '',
     department: emp.department || '',
@@ -63,9 +60,10 @@ const normalizeEmployee = (emp) => ({
     biometricEmployeeId: emp.biometricEmployeeId == null
         ? ''
         : String(emp.biometricEmployeeId).trim(),
-    serverAcademicYear: emp.academicYear || null,
+    serverFinancialYear: emp.financialYear || emp.academicYear || null,
     status: emp.status || (emp.biometricEmployeeId ? 'Mapped' : 'Unmapped'),
-});
+    };
+};
 
 // ─── Column widths (px) — header row & virtual rows MUST share these to keep
 // columns visually aligned, since both are flex-based after the migration off
@@ -257,20 +255,9 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
     // When rendered as a standalone route (no onBack prop) the back button
     // pops the router stack so we land on the previous Leave & Attendance view.
     const handleBack = onBack || (() => navigate(-1));
-    // Academic year is editable from the header — refetching the mappings
-    // whenever the user changes it. Generate a small window of years so users
-    // can review past or upcoming academic-year mappings without retyping.
-    const [academicYear, setAcademicYear] = useState(() => getCurrentAcademicYear());
-    const academicYears = useMemo(() => {
-        const today = new Date();
-        const currentYear = today.getFullYear();
-        // Show 2 years back + 2 years ahead so the dropdown stays compact.
-        const list = [];
-        for (let y = currentYear - 2; y <= currentYear + 2; y++) {
-            list.push(`${y}-${y + 1}`);
-        }
-        return list;
-    }, []);
+    // The year comes from the app header now, not a second picker on this page —
+    // two selectors for the same thing is exactly how they end up disagreeing.
+    const financialYear = useFinancialYear();
 
     // ─── State ─────────────────────────────────────────────────────────────
     const [staff, setStaff] = useState([]);                  // { id, rollNumber, name, ... biometricEmployeeId }
@@ -295,11 +282,13 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
     //     dirty/unsaved diffing AND tells us whether to POST or PUT later)
     //   • draftIds    — what the user is currently editing
     const fetchStaff = useCallback(async () => {
+        if (!financialYear) return;
         setIsLoading(true);
         try {
-            const res = await axios.get(GetBiometricMappings, {
-                params: { academicYear },
-                headers: { Authorization: `Bearer ${token}` },
+            // `academicYear` is still the field name on this legacy endpoint; the
+            // value is the company's financial year.
+            const res = await http.get(GetBiometricMappings, {
+                params: { academicYear: financialYear },
             });
             const body = res?.data;
             if (body?.error) {
@@ -326,7 +315,7 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
         } finally {
             setIsLoading(false);
         }
-    }, [academicYear]);
+    }, [financialYear]);
 
     useEffect(() => { fetchStaff(); }, [fetchStaff]);
 
@@ -350,7 +339,6 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
         return { total, mapped, unmapped, dirty };
     }, [staff, draftIds, originalIds]);
 
-    const isRowDirty = (roll) => (draftIds[roll] || '') !== (originalIds[roll] || '');
     const dirtyRolls = useMemo(
         () => Object.keys(draftIds).filter(r => (draftIds[r] || '') !== (originalIds[r] || '')),
         [draftIds, originalIds]
@@ -436,14 +424,15 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
                 biometricEmployeeId: draftIds[roll] || '',
             };
             // Existing server-side record? PUT. Otherwise POST a new one.
-            const hadServerRecord = !!row.serverAcademicYear
+            const hadServerRecord = !!row.serverFinancialYear
                 || (originalIds[roll] || '').length > 0;
             (hadServerRecord ? toUpdateItems : toCreateItems).push(item);
         });
 
-        const headers = { Authorization: `Bearer ${token}` };
+        // `academicYear` is still the field name on these legacy endpoints; the
+        // value is the company's financial year.
         const baseBody = {
-            academicYear,
+            academicYear: financialYear,
             updatedByRollNumber: currentRoll,
         };
 
@@ -451,10 +440,10 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
         try {
             const calls = [];
             if (toCreateItems.length > 0) {
-                calls.push(axios.post(PostBiometricMappings, { ...baseBody, items: toCreateItems }, { headers }));
+                calls.push(http.post(PostBiometricMappings, { ...baseBody, items: toCreateItems }));
             }
             if (toUpdateItems.length > 0) {
-                calls.push(axios.put(UpdateBiometricMappings, { ...baseBody, items: toUpdateItems }, { headers }));
+                calls.push(http.put(UpdateBiometricMappings, { ...baseBody, items: toUpdateItems }));
             }
             const results = await Promise.all(calls);
             // Surface any backend-flagged error embedded in a 2xx response.
@@ -471,7 +460,7 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
                 return next;
             });
             setStaff(prev => prev.map(r => dirtyRolls.includes(r.rollNumber)
-                ? { ...r, serverAcademicYear: academicYear, biometricEmployeeId: draftIds[r.rollNumber] || '' }
+                ? { ...r, serverFinancialYear: financialYear, biometricEmployeeId: draftIds[r.rollNumber] || '' }
                 : r
             ));
             showSnack(`Saved biometric IDs for ${dirtyRolls.length} staff`, true);
@@ -532,16 +521,20 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
                     mb: 2, flexWrap: 'wrap', gap: 1.5,
                 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
-                        <IconButton
-                            onClick={handleBack}
-                            sx={{
-                                width: 38, height: 38, borderRadius: '7px',
-                                bgcolor: '#fff', border: '1px solid #E5E7EB',
-                                '&:hover': { bgcolor: PRIMARY_LIGHT, borderColor: PRIMARY_BORDER },
-                            }}
-                        >
-                            <ArrowBackIcon sx={{ fontSize: 18, color: '#374151' }} />
-                        </IconButton>
+                        {/* Inside a tab there's nowhere to go "back" to — the tab bar
+                            is the navigation — so the arrow only shows standalone. */}
+                        {!isEmbedded && (
+                            <IconButton
+                                onClick={handleBack}
+                                sx={{
+                                    width: 38, height: 38, borderRadius: '7px',
+                                    bgcolor: '#fff', border: '1px solid #E5E7EB',
+                                    '&:hover': { bgcolor: PRIMARY_LIGHT, borderColor: PRIMARY_BORDER },
+                                }}
+                            >
+                                <ArrowBackIcon sx={{ fontSize: 18, color: '#374151' }} />
+                            </IconButton>
+                        )}
                         <Box sx={{
                             width: 40, height: 40, borderRadius: '7px',
                             bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
@@ -559,43 +552,26 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
                         </Box>
                     </Box>
 
-                    {/* Academic year selector — refetches mappings on change.
-                        Blocked while a save is in flight or there are dirty
-                        edits, so the user doesn't accidentally lose pending
-                        work by switching the academic year. */}
+                    {/* The year is chosen once, in the app header — this just shows
+                        which one the mappings below belong to. */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{
-                            display: 'flex', alignItems: 'center', gap: 0.6,
-                            px: 1, height: 36, borderRadius: '7px',
-                            bgcolor: '#fff', border: '1px solid #E5E7EB',
-                        }}>
-                            <CalendarMonthOutlinedIcon sx={{ fontSize: 16, color: PRIMARY_DARK }} />
-                            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                                Academic Year
-                            </Typography>
-                            <Select
-                                size="small"
-                                value={academicYear}
-                                onChange={(e) => setAcademicYear(e.target.value)}
-                                disabled={isSaving || stats.dirty > 0}
-                                variant="standard"
-                                disableUnderline
-                                sx={{
-                                    fontSize: 13, fontWeight: 700, color: PRIMARY_DARK,
-                                    minWidth: 110, pl: 0.5,
-                                    '& .MuiSelect-icon': { color: PRIMARY_DARK },
-                                    '&.Mui-disabled': { opacity: 0.6 },
-                                }}
-                            >
-                                {academicYears.map(yr => (
-                                    <MenuItem key={yr} value={yr} sx={{ fontSize: 13, fontWeight: 600 }}>
-                                        {yr}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </Box>
+                        <Tooltip arrow title="Change the financial year from the header">
+                            <Box sx={{
+                                display: 'flex', alignItems: 'center', gap: 0.6,
+                                px: 1.2, height: 36, borderRadius: '7px',
+                                bgcolor: '#fff', border: '1px solid #E5E7EB',
+                            }}>
+                                <CalendarMonthOutlinedIcon sx={{ fontSize: 16, color: PRIMARY_DARK }} />
+                                <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                                    Financial Year
+                                </Typography>
+                                <Typography sx={{ fontSize: 13, fontWeight: 700, color: PRIMARY_DARK, pl: 0.5 }}>
+                                    {financialYear || '—'}
+                                </Typography>
+                            </Box>
+                        </Tooltip>
                         {stats.dirty > 0 && (
-                            <Tooltip arrow title="Save your changes before switching academic years.">
+                            <Tooltip arrow title="Save your changes before switching the financial year.">
                                 <Box sx={{
                                     px: 1, height: 24, borderRadius: '7px',
                                     display: 'flex', alignItems: 'center',
@@ -714,9 +690,9 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
                                         onClick={() => setBulkDialogOpen(true)}
                                         sx={{
                                             textTransform: 'none', fontSize: 12.5, fontWeight: 700,
-                                            background: '#F1EEFE', border: '1px solid #C9BEFB', boxShadow: 'none', color: '#7C5CFC',
+                                            background: '#F1EEFE', color: '#7C5CFC',
                                             border: '1px solid #0F172A', borderRadius: '7px',
-                                            px: 1.6, height: 32, boxShadow: 'none',
+                                            boxShadow: 'none', px: 1.6, height: 32,
                                             '&:hover': { bgcolor: '#6246E0', borderColor: '#6246E0' },
                                         }}
                                     >

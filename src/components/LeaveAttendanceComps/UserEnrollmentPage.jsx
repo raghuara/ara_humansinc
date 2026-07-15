@@ -15,14 +15,12 @@ import {
     TableHead,
     TableRow,
     Avatar,
-    Divider,
     Select,
     MenuItem,
     Tabs,
     Tab,
     LinearProgress,
-    Alert,
-    AlertTitle
+    Alert
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';

@@ -6,7 +6,6 @@ import {
     LinearProgress, CircularProgress, Avatar, Menu, MenuItem,
     InputAdornment, Tooltip,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
@@ -23,14 +22,11 @@ import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
-import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
-import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import axios from 'axios';
+import http from '../../Api/http';
 import { reportsLeaveManagement, reportsLeaveManagementFullReport } from '../../Api/Api';
 import SnackBar from '../SnackBar';
 
-const token = "123";
 
 // ─── Theme (matches other Leave & Attendance tabs) ─────────────────────────
 const PRIMARY = '#7C5CFC';
@@ -99,7 +95,6 @@ const getInitials = (name = '') =>
 // ─── Date presets (improvement) ────────────────────────────────────────────
 const buildPresets = () => {
     const today = new Date();
-    const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const todayIso = isoFromDate(today);
 
     const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
@@ -125,8 +120,6 @@ const buildPresets = () => {
 };
 
 export default function AttendanceReportsPage({ isEmbedded = false }) {
-    const navigate = useNavigate();
-
     // ── Filters ────────────────────────────────────────────────────────────
     const [fromDate, setFromDate] = useState(getTodayInput);
     const [toDate, setToDate]     = useState(getTodayInput);
@@ -166,14 +159,13 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
     const fetchReports = useCallback(async () => {
         setIsLoading(true);
         try {
-            const res = await axios.get(reportsLeaveManagement, {
+            const res = await http.get(reportsLeaveManagement, {
                 params: {
                     FromDate:         fromDate,
                     ToDate:           toDate,
                     Category:         mapCategoryToApi(categoryFilter === 'all' ? '' : categoryFilter),
                     AttendanceStatus: statusFilter !== 'all' ? statusFilter : '',
                 },
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (res.data && !res.data.error) {
                 setCards(res.data.cards || {});
@@ -218,13 +210,12 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
 
         setReportDialog({ open: true, data: null, isLoading: true });
         try {
-            const res = await axios.get(reportsLeaveManagementFullReport, {
+            const res = await http.get(reportsLeaveManagementFullReport, {
                 params: {
                     RollNumber: staffId,
                     FromDate:   fromDate,
                     ToDate:     toDate,
                 },
-                headers: { Authorization: `Bearer ${token}` },
             });
             const body = res?.data || {};
 

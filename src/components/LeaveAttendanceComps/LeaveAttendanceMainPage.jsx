@@ -2,18 +2,16 @@ import React, { useState } from 'react';
 import {
     Box,
     Typography,
-    IconButton,
     Tabs,
     Tab,
     Divider,
     Grid,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import EventNoteIcon from '@mui/icons-material/EventNote';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import PolicyIcon from '@mui/icons-material/Policy';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 
 // Import existing page components
@@ -67,7 +65,7 @@ export default function LeaveAttendanceMainPage() {
     const user = useSelector((state) => state.auth);
     const userType = user.userType;
     const isLeaveAttendancePath = location.pathname.endsWith('/leave-attendance');
-    const [moduleTab, setModuleTab] = useState(isLeaveAttendancePath ? 0 : (location.state?.moduleTab ?? null)); // null: show cards, 0: Leave, 1: Payroll
+    const [moduleTab] = useState(isLeaveAttendancePath ? 0 : (location.state?.moduleTab ?? null)); // null: show cards, 0: Leave, 1: Payroll
     const [tabValue, setTabValue] = useState(0);
 
     const handleModuleCardClick = (moduleIndex) => {
@@ -80,15 +78,6 @@ export default function LeaveAttendanceMainPage() {
         } else if (moduleIndex === 2) {
             // Leave Policy Master — direct entry from main page
             navigate('payroll/leave-policy/leave-master');
-        }
-    };
-
-    const handleBackToCards = () => {
-        if (isLeaveAttendancePath) {
-            navigate(-1);
-        } else {
-            setModuleTab(null);
-            setTabValue(0);
         }
     };
 

@@ -1,20 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import {
-    Box, Card, CardContent, Grid, Typography, Button, Chip,
+    Box, Card, Grid, Typography, Button, Chip,
     Avatar, Select, MenuItem, TextField, InputAdornment,
-    Switch, Tooltip, CircularProgress, Alert, IconButton, Menu, Divider,
+    Switch, Tooltip, CircularProgress, IconButton, Menu, Divider,
     Popover, Paper, Tabs, Tab,
 } from '@mui/material';
 import { List } from 'react-window';
 import SaveIcon from '@mui/icons-material/Save';
 import SearchIcon from '@mui/icons-material/Search';
-import PeopleIcon from '@mui/icons-material/People';
 import EventIcon from '@mui/icons-material/Event';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import LogoutIcon from '@mui/icons-material/Logout';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import EditNoteIcon from '@mui/icons-material/EditNote';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
@@ -23,28 +21,20 @@ import StickyNote2Icon from '@mui/icons-material/StickyNote2';
 import LocalCafeIcon from '@mui/icons-material/LocalCafe';
 import RestaurantIcon from '@mui/icons-material/Restaurant';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutlineRounded';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineRounded';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import FingerprintIcon from '@mui/icons-material/Fingerprint';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import LoginIcon from '@mui/icons-material/Login';
 import EventBusyIcon from '@mui/icons-material/EventBusy';
-import axios from 'axios';
+import http from '../../Api/http';
 import { useSelector } from 'react-redux';
-import { GetAttendanceTeacherBefore, PostTeachersManualAttendance, GetTeachersAttendance } from '../../Api/Api';
+import HistoryIcon from '@mui/icons-material/History';
+import { useNavigate } from 'react-router-dom';
+import { GetEmployeeAttendance, GetAttendanceEmployeeBefore, PostEmployeeManualAttendance } from '../../Api/Api';
+import useFinancialYear from '../../hooks/useFinancialYear';
+import { toApiDate } from '../../utils/apiFields';
 import SnackBar from '../SnackBar';
 
 const today = new Date().toISOString().split('T')[0];
-const token = "123";
-
-// Academic year window (April → March) — matches the rest of the Leave &
-// Attendance module. Returns format expected by the API, e.g. "2026-2027".
-const getCurrentAcademicYear = () => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    return m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
-};
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
 const PRIMARY = '#7C5CFC';
@@ -58,13 +48,6 @@ const LATE_THRESHOLD_MIN = 15;     // > 9:15 → Late
 const DEFAULT_CHECK_OUT = '17:00'; // 5:00 PM default for bulk fill
 
 // ─── Display maps ────────────────────────────────────────────────────────────
-const USER_TYPE_CONFIG = {
-    'Teacher':     { color: '#6246E0', bg: '#F1EEFE' },
-    'Staff':       { color: '#0E7490', bg: '#ECFEFF' },
-    'Admin':       { color: '#1D4ED8', bg: '#F3F0FE' },
-    'Super Admin': { color: '#1D4ED8', bg: '#F3F0FE' },
-};
-
 const ROLE_CONFIG = {
     'Teaching Staff':     { color: '#1D4ED8', bg: '#F3F0FE', border: '#C9BEFB' },
     'Non Teaching Staff': { color: '#0E7490', bg: '#ECFEFF', border: '#A5F3FC' },
@@ -84,20 +67,6 @@ const avatarColorFor = (name = '') => {
     return AVATAR_PALETTE[code % AVATAR_PALETTE.length];
 };
 
-const USER_TYPE_DISPLAY = {
-    'teacher':    'Teacher',
-    'staff':      'Staff',
-    'admin':      'Admin',
-    'superadmin': 'Super Admin',
-};
-
-const ROLE_FROM_USER_TYPE = {
-    'teacher':    'Teaching Staff',
-    'staff':      'Supporting Staff',
-    'admin':      'Non Teaching Staff',
-    'superadmin': 'Non Teaching Staff',
-};
-
 const STATUS_API_TO_UI = {
     'present': 'Present',
     'absent':  'Absent',
@@ -112,15 +81,6 @@ const STATUS_UI_TO_API = {
     'On Leave': 'leave',
 };
 
-const UI_TO_API_USER_TYPE = {
-    'Teacher':     'teacher',
-    'Staff':       'staff',
-    'Admin':       'admin',
-    'Super Admin': 'superadmin',
-};
-
-const FETCH_USER_TYPES = ['teacher', 'staff', 'admin'];
-
 const STATUS_OPTIONS = ['Present', 'Late', 'Absent', 'On Leave'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -128,11 +88,6 @@ const toHHmm = (date = new Date()) =>
     `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
 const getCurrentTime = () => toHHmm(new Date());
-
-const isoToApiDate = (isoDate) => {
-    const [y, m, d] = isoDate.split('-');
-    return `${d}-${m}-${y}`;
-};
 
 const parseHHmm = (hhmm) => {
     if (!hhmm) return null;
@@ -315,7 +270,9 @@ const StaffRow = memo(function StaffRow({
     // Attendance tab.
     const breakMinForRow = work ? computeTotalBreakMinutes(breaksMap?.[staff.id] || []) : 0;
     const netWorkMin = work ? Math.max(0, work.totalMinutes - breakMinForRow) : 0;
-    const roleConf = ROLE_CONFIG[staff.role] || { color: '#6B7280', bg: '#F3F4F6', border: '#E5E7EB' };
+    // The API gives a free-text designation, so there's no fixed palette to key
+    // off — everything falls back to the neutral chip unless it happens to match.
+    const roleConf = ROLE_CONFIG[staff.designation] || { color: '#6B7280', bg: '#F3F4F6', border: '#E5E7EB' };
     const avColor = avatarColorFor(staff.name || '');
     const needsTime = mark === 'Present' || mark === 'Late';
 
@@ -395,11 +352,11 @@ const StaffRow = memo(function StaffRow({
                             />
                         )}
                     </Box>
-                    <Typography sx={{ fontSize: '10px', color: '#9CA3AF', fontWeight: 500 }}>{staff.rollNumber}</Typography>
+                    <Typography sx={{ fontSize: '10px', color: '#9CA3AF', fontWeight: 500 }}>{staff.employeeCode}</Typography>
                 </Box>
             </Box>
             <Box sx={{ width: COL_STAFF.role, flexShrink: 0 }}>
-                <Chip label={staff.role} size="small"
+                <Chip label={staff.designation || '—'} size="small"
                     sx={{
                         bgcolor: roleConf.bg, color: roleConf.color,
                         border: `1px solid ${roleConf.border}`,
@@ -553,7 +510,7 @@ const BreakRow = memo(function BreakRow({
                 </Avatar>
                 <Box sx={{ minWidth: 0 }}>
                     <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#111827' }} noWrap>{staff.name}</Typography>
-                    <Typography sx={{ fontSize: '10px', color: '#9CA3AF', fontWeight: 500 }}>{staff.rollNumber}</Typography>
+                    <Typography sx={{ fontSize: '10px', color: '#9CA3AF', fontWeight: 500 }}>{staff.employeeCode}</Typography>
                 </Box>
             </Box>
 
@@ -726,18 +683,21 @@ const BreakRow = memo(function BreakRow({
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function AddStaffAttendancePage() {
+    const navigate = useNavigate();
     const user = useSelector(state => state.auth);
+    const financialYear = useFinancialYear();
     const currentUserRoll = user?.rollNumber || '';
 
     const [attendanceDate, setAttendanceDate] = useState(today);
-    const [userTypeFilter, setUserTypeFilter] = useState('Teacher');
+    // The API groups staff by designation, not by the old teacher/staff/admin
+    // user types — so the filter follows what the data actually contains.
+    const [designationFilter, setDesignationFilter] = useState('All');
     const [searchText, setSearchText] = useState('');
 
     const [staffList, setStaffList] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [isAttendanceAddedMap, setIsAttendanceAddedMap] = useState({});
-
-    const isMounted = useRef(false);
+    const [saving, setSaving] = useState(false);
+    const [isAttendanceAdded, setIsAttendanceAdded] = useState(false);
 
     // Active tab: 0 = Check In/Out, 1 = Break In/Out
     const [activeTab, setActiveTab] = useState(0);
@@ -781,270 +741,154 @@ export default function AddStaffAttendancePage() {
     // the UI uses HH:MM and we re-append :00 on save (via toApiTime).
     const trimSec = (t) => (t && t.length >= 5 ? t.slice(0, 5) : (t || ''));
 
-    const mapStaffItem = (item) => {
-        const apiUType = item.userType?.toLowerCase() || '';
+    // `emp`    — a row from GetAttendanceEmployeeBefore (identity: who they are).
+    // `record` — the matching row from GetEmployeeAttendance for the chosen date,
+    //            or undefined when nothing has been recorded for them yet.
+    const mapAttendanceRow = (emp, record) => {
+        const punches = Array.isArray(record?.punches) ? record.punches : [];
+        const firstPunch = punches.length > 0 ? punches[0] : null;
+        const lastPunch  = punches.length > 0 ? punches[punches.length - 1] : null;
 
-        // Login/logout — prefer the new `punches[]` shape, fall back to the
-        // legacy `dateTime` / `checkOut` fields.
-        const firstPunch = Array.isArray(item.punches) && item.punches.length > 0 ? item.punches[0] : null;
-        const lastPunch  = Array.isArray(item.punches) && item.punches.length > 0 ? item.punches[item.punches.length - 1] : null;
-        const existingCheckIn = firstPunch?.loginTime
-            ? trimSec(firstPunch.loginTime)
-            : (item.dateTime ? (item.dateTime.split(' ')[1] || '') : '');
-        const existingCheckOut = lastPunch?.logoutTime
-            ? trimSec(lastPunch.logoutTime)
-            : (item.checkOut || '');
-
-        // Existing server breaks — KEEP the server `breakNo` so edits route
-        // through update mode (per spec A4). Breaks added locally afterwards
-        // will have no `breakNo`, which signals the server to assign one (A3).
-        const existingBreaks = Array.isArray(item.breaks)
-            ? item.breaks.map(b => ({
+        // Existing server breaks — KEEP the server `breakNo` so edits route through
+        // update mode. Breaks added locally have no `breakNo`, which signals the
+        // server to assign one and create a new row.
+        const existingBreaks = Array.isArray(record?.breaks)
+            ? record.breaks.map(b => ({
                 id: makeBreakId(),
                 out: trimSec(b.breakOutTime),
                 in:  trimSec(b.breakInTime),
                 breakNo: Number.isInteger(b.breakNo) ? b.breakNo : undefined,
+                outSource: b.breakOutSource || '',
+                inSource:  b.breakInSource  || '',
             })).filter(b => b.out || b.in)
             : [];
 
+        const name = emp.name || record?.employeeName || 'Unknown';
+        const leaveRow = Array.isArray(record?.leaves) ? record.leaves.find(l => l?.isOnApprovedLeave) : null;
+
         return {
-            id: item.rollNumber,
-            rollNumber: item.rollNumber,
-            // PostTeachersManualAttendance expects EmployeeId per item — the
-            // GetAttendanceTeacherBefore response calls it `biometricId`.
-            employeeId: item.biometricId || item.employeeId || '',
-            name: item.name,
-            userType: USER_TYPE_DISPLAY[apiUType] || item.userType,
-            role: ROLE_FROM_USER_TYPE[apiUType] || 'Non Teaching Staff',
-            avatar: item.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase(),
-            filePath: item.filePath || '',
-            existingStatus: item.status || '',
-            existingCheckIn,
-            existingCheckOut,
-            existingNotes: item.notes || '',
+            id: emp.employeeCode,
+            employeeCode: emp.employeeCode,
+            // The roster sends '' when there's no device mapping; the API wants null.
+            biometricEmployeeId: emp.biometricEmployeeId || record?.biometricEmployeeId || null,
+            name,
+            designation: emp.designation || '',
+            department: emp.department || '',
+            avatar: name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase(),
+            filePath: emp.filePath || record?.profilePath || '',
+            existingStatus: record?.status || '',
+            existingCheckIn: trimSec(firstPunch?.loginTime),
+            existingCheckOut: trimSec(lastPunch?.logoutTime),
+            existingNotes: '',
             existingBreaks,
+            leave: leaveRow
+                ? { isOnApprovedLeave: true, approvedLeaveIsHalfDay: !!leaveRow.approvedLeaveIsHalfDay }
+                : null,
+            source: {
+                login:  firstPunch?.loginSource  || '',
+                logout: lastPunch?.logoutSource  || '',
+            },
         };
     };
 
     const initRowState = (staff) => {
-        const marks = {}, ins = {}, outs = {}, notes = {}, brks = {};
+        const marks = {}, ins = {}, outs = {}, notes = {}, brks = {}, leaves = {}, srcs = {};
         staff.forEach(s => {
-            // Only seed a status when the server already has one for this
-            // staff — otherwise leave it empty so the user has to pick.
-            const fromServer = STATUS_API_TO_UI[s.existingStatus.toLowerCase()];
-            marks[s.id] = fromServer || '';
+            // An approved leave wins over whatever punches say — the row locks to
+            // "On Leave". Otherwise seed from the server's status, or leave it
+            // blank so the user has to pick.
+            const fromServer = STATUS_API_TO_UI[String(s.existingStatus).toLowerCase()];
+            marks[s.id] = s.leave ? 'On Leave' : (fromServer || '');
             ins[s.id]   = s.existingCheckIn;
             outs[s.id]  = s.existingCheckOut;
             notes[s.id] = s.existingNotes;
             brks[s.id]  = s.existingBreaks || [];
+            if (s.leave)  leaves[s.id] = s.leave;
+            if (s.source) srcs[s.id]   = s.source;
         });
-        return { marks, ins, outs, notes, brks };
+        return { marks, ins, outs, notes, brks, leaves, srcs };
     };
 
-    // GET /GetAttendanceTeacherBefore?AcademicYear=YYYY-YYYY&UserType=<role>
-    // Returns { details: [{ rollNumber, name, userType, status, dateTime, ... }] }.
-    // The endpoint no longer returns the top-level `isAttendanceAdded` flag, so
-    // we derive it per user-type from whether any row has a populated `status`.
-    const fetchStaffList = async () => {
+    // Two calls, each answering a different question:
+    //
+    //   GetAttendanceEmployeeBefore?financialYear=  → WHO can be marked. This is the
+    //       roster, and it's the only complete one: GetEmployeeAttendance only knows
+    //       about people who already have a record, so a brand-new employee with no
+    //       attendance yet would simply never appear if we built the list from it.
+    //
+    //   GetEmployeeAttendance?fromDate=&toDate=     → WHAT is already recorded for
+    //       the chosen day, which pre-fills the rows.
+    const fetchAttendance = async () => {
+        const apiDate = toApiDate(attendanceDate);
+        if (!apiDate || !financialYear) return;
+
         setLoading(true);
-        const academicYear = getCurrentAcademicYear();
         try {
-            const results = await Promise.allSettled(
-                FETCH_USER_TYPES.map(uType =>
-                    axios.get(GetAttendanceTeacherBefore, {
-                        params: { AcademicYear: academicYear, UserType: uType },
-                        headers: { Authorization: `Bearer ${token}` },
-                    })
-                )
-            );
+            const [rosterRes, recordRes] = await Promise.all([
+                http.get(GetAttendanceEmployeeBefore, { params: { financialYear } }),
+                http.get(GetEmployeeAttendance, { params: { fromDate: apiDate, toDate: apiDate } })
+                    .catch(err => (err?.response?.status === 404 ? { data: { data: [] } } : Promise.reject(err))),
+            ]);
 
-            const allStaff = [];
-            const addedMap = {};
-            results.forEach((result, i) => {
-                const uiType = USER_TYPE_DISPLAY[FETCH_USER_TYPES[i]];
-                if (result.status === 'fulfilled' && !result.value.data.error) {
-                    const { details = [], isAttendanceAdded: flag } = result.value.data;
-                    const isAdded = flag === 'Y' ? true
-                        : flag === 'N' ? false
-                        : details.some(d => d.status && String(d.status).trim().length > 0);
-                    addedMap[uiType] = isAdded;
-                    details.forEach(item => allStaff.push(mapStaffItem(item)));
-                } else {
-                    addedMap[uiType] = false;
-                }
-            });
-
-            setStaffList(allStaff);
-            setIsAttendanceAddedMap(addedMap);
-            const { marks, ins, outs, notes, brks } = initRowState(allStaff);
-            setAttendanceMarks(marks); setCheckInTimes(ins); setCheckOutTimes(outs); setRowNotes(notes);
-            setBreaksMap(brks);
-        } catch {
-            showSnack('Failed to load staff list', false);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchUserType = async (uiType) => {
-        const apiUType = UI_TO_API_USER_TYPE[uiType] || uiType.toLowerCase();
-        setLoading(true);
-        const academicYear = getCurrentAcademicYear();
-        try {
-            const res = await axios.get(GetAttendanceTeacherBefore, {
-                params: { AcademicYear: academicYear, UserType: apiUType },
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res.data.error) {
-                const { details = [], isAttendanceAdded: flag } = res.data;
-                const newStaff = details.map(item => mapStaffItem(item));
-                const isAdded = flag === 'Y' ? true
-                    : flag === 'N' ? false
-                    : details.some(d => d.status && String(d.status).trim().length > 0);
-
-                setStaffList(prev => [...prev.filter(s => s.userType !== uiType), ...newStaff]);
-                setIsAttendanceAddedMap(prev => ({ ...prev, [uiType]: isAdded }));
-
-                const apply = (prev, key) => {
-                    const updated = { ...prev };
-                    newStaff.forEach(s => {
-                        if (key === 'marks')  updated[s.id] = STATUS_API_TO_UI[s.existingStatus.toLowerCase()] || '';
-                        if (key === 'ins')    updated[s.id] = s.existingCheckIn;
-                        if (key === 'outs')   updated[s.id] = s.existingCheckOut;
-                        if (key === 'notes')  updated[s.id] = s.existingNotes;
-                        if (key === 'brks')   updated[s.id] = s.existingBreaks || [];
-                    });
-                    return updated;
-                };
-                setAttendanceMarks(prev => apply(prev, 'marks'));
-                setCheckInTimes(prev   => apply(prev, 'ins'));
-                setCheckOutTimes(prev  => apply(prev, 'outs'));
-                setRowNotes(prev       => apply(prev, 'notes'));
-                setBreaksMap(prev      => apply(prev, 'brks'));
+            if (rosterRes?.data?.error) {
+                showSnack(rosterRes.data.message || 'Failed to load the employee list', false);
+                return;
             }
-        } catch {
-            showSnack('Failed to reload staff data', false);
+
+            const roster = Array.isArray(rosterRes?.data?.details) ? rosterRes.data.details : [];
+            const records = Array.isArray(recordRes?.data?.data) ? recordRes.data.data : [];
+            const byCode = new Map(records.map(r => [r.employeeCode, r]));
+
+            const staff = roster
+                .filter(e => e.employeeCode)
+                .map(e => mapAttendanceRow(e, byCode.get(e.employeeCode)));
+
+            setStaffList(staff);
+            // "Already marked" = the server already holds a status for this date, which
+            // is what tells the user their edits will update rather than create.
+            setIsAttendanceAdded(staff.some(s => String(s.existingStatus).trim().length > 0));
+
+            const { marks, ins, outs, notes, brks, leaves, srcs } = initRowState(staff);
+            setAttendanceMarks(marks);
+            setCheckInTimes(ins);
+            setCheckOutTimes(outs);
+            setRowNotes(notes);
+            setBreaksMap(brks);
+            setLeaveMap(leaves);
+            setSourceMap(srcs);
+        } catch (err) {
+            console.error('Attendance load failed:', err);
+            showSnack(err?.response?.data?.message || 'Failed to load attendance', false);
         } finally {
             setLoading(false);
         }
     };
 
-    // GET /teachersattendance/GetTeachersAttendance
-    //   ?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD&academicYear=YYYY-YYYY
-    // Fetches the actual per-staff record for the selected date so the row
-    // pre-fills with existing punches / breaks / leaves and the source
-    // (biometric vs manual) for each filled field. Only enriches staff that
-    // already appear in `staffList` — it does NOT add new rows.
-    const fetchTodaysAttendance = async () => {
-        try {
-            const res = await axios.get(GetTeachersAttendance, {
-                params: {
-                    fromDate: attendanceDate,
-                    toDate:   attendanceDate,
-                    academicYear: getCurrentAcademicYear(),
-                },
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res?.data || res.data.error) return;
-            const rows = Array.isArray(res.data.data) ? res.data.data : [];
-            if (rows.length === 0) return;
-
-            const marksDelta  = {};
-            const insDelta    = {};
-            const outsDelta   = {};
-            const breaksDelta = {};
-            const leaveDelta  = {};
-            const srcDelta    = {};
-
-            rows.forEach(rec => {
-                const id = rec.rollNumber;
-                if (!id) return;
-
-                const firstPunch = Array.isArray(rec.punches) && rec.punches.length > 0 ? rec.punches[0] : null;
-                const lastPunch  = Array.isArray(rec.punches) && rec.punches.length > 0 ? rec.punches[rec.punches.length - 1] : null;
-                const login  = trimSec(firstPunch?.loginTime);
-                const logout = trimSec(lastPunch?.logoutTime);
-
-                // Leaves — auto-lock to "On Leave" when approved by server.
-                const leaveRow = Array.isArray(rec.leaves) ? rec.leaves.find(l => l?.isOnApprovedLeave) : null;
-                if (leaveRow) {
-                    leaveDelta[id] = {
-                        isOnApprovedLeave: true,
-                        approvedLeaveIsHalfDay: !!leaveRow.approvedLeaveIsHalfDay,
-                    };
-                    marksDelta[id] = 'On Leave';
-                } else if (login) {
-                    // Derive late vs present from the login time relative to the
-                    // school start + late threshold.
-                    const [hh, mm] = login.split(':').map(Number);
-                    const lateAfter = SCHOOL_START_HOUR * 60 + LATE_THRESHOLD_MIN;
-                    marksDelta[id] = (hh * 60 + (mm || 0)) > lateAfter ? 'Late' : 'Present';
-                }
-
-                if (login)  insDelta[id]  = login;
-                if (logout) outsDelta[id] = logout;
-
-                // Breaks — keep server breakNo so update-mode works (per A4).
-                if (Array.isArray(rec.breaks) && rec.breaks.length > 0) {
-                    breaksDelta[id] = rec.breaks.map(b => ({
-                        id: makeBreakId(),
-                        out: trimSec(b.breakOutTime),
-                        in:  trimSec(b.breakInTime),
-                        breakNo: Number.isInteger(b.breakNo) ? b.breakNo : undefined,
-                        outSource: b.breakOutSource || '',
-                        inSource:  b.breakInSource  || '',
-                    }));
-                }
-
-                // Source badges next to login/logout times.
-                srcDelta[id] = {
-                    login:  firstPunch?.loginSource  || '',
-                    logout: lastPunch?.logoutSource  || '',
-                };
-            });
-
-            if (Object.keys(marksDelta).length)  setAttendanceMarks(prev => ({ ...prev, ...marksDelta }));
-            if (Object.keys(insDelta).length)    setCheckInTimes(prev   => ({ ...prev, ...insDelta }));
-            if (Object.keys(outsDelta).length)   setCheckOutTimes(prev  => ({ ...prev, ...outsDelta }));
-            if (Object.keys(breaksDelta).length) setBreaksMap(prev      => ({ ...prev, ...breaksDelta }));
-            if (Object.keys(leaveDelta).length)  setLeaveMap(prev       => ({ ...prev, ...leaveDelta }));
-            if (Object.keys(srcDelta).length)    setSourceMap(prev      => ({ ...prev, ...srcDelta }));
-        } catch (err) {
-            console.error("Failed to enrich today's attendance:", err);
-            // Soft-fail — base staff list still works without enrichment.
-        }
-    };
-
     useEffect(() => {
-        isMounted.current = false;
-        fetchStaffList().then(() => fetchTodaysAttendance());
+        fetchAttendance();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [attendanceDate]);
-
-    useEffect(() => {
-        if (!isMounted.current) { isMounted.current = true; return; }
-        fetchUserType(userTypeFilter).then(() => fetchTodaysAttendance());
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userTypeFilter]);
-
+    }, [attendanceDate, financialYear]);
     // ─── Derived ─────────────────────────────────────────────────────────────
     const needsTime = (id) => {
         const s = attendanceMarks[id];
         return s === 'Present' || s === 'Late';
     };
 
-    const userTypes = Object.keys(USER_TYPE_CONFIG);
+    const designations = useMemo(
+        () => ['All', ...Array.from(new Set(staffList.map(s => s.designation).filter(Boolean))).sort()],
+        [staffList]
+    );
 
     const filteredStaff = useMemo(() =>
         staffList.filter(s => {
-            const matchUserType = s.userType === userTypeFilter;
+            const matchDesignation = designationFilter === 'All' || s.designation === designationFilter;
             const q = searchText.trim().toLowerCase();
             const matchSearch = !q ||
                 s.name.toLowerCase().includes(q) ||
-                String(s.rollNumber).toLowerCase().includes(q);
-            return matchUserType && matchSearch;
+                String(s.employeeCode).toLowerCase().includes(q);
+            return matchDesignation && matchSearch;
         }),
-        [staffList, userTypeFilter, searchText]
+        [staffList, designationFilter, searchText]
     );
 
     const counts = useMemo(() => ({
@@ -1054,7 +898,6 @@ export default function AddStaffAttendancePage() {
         onLeave: filteredStaff.filter(s => attendanceMarks[s.id] === 'On Leave').length,
     }), [filteredStaff, attendanceMarks]);
 
-    const isCurrentTypeAdded = isAttendanceAddedMap[userTypeFilter] || false;
 
     // ─── Handlers ────────────────────────────────────────────────────────────
     const handleMarkChange = useCallback((id, newMark) => {
@@ -1210,19 +1053,14 @@ export default function AddStaffAttendancePage() {
         });
     }, []);
 
-    // POST /teachersattendance/PostTeachersManualAttendance
-    // Body shape:
-    //   {
-    //     editorRollNumber, date (YYYY-MM-DD), academicYear, reason,
-    //     items: [{
-    //       rollNumber, employeeId,
-    //       status, loginTime (HH:MM:SS), logoutTime (HH:MM:SS),
-    //       breaks: [{ breakNo?, breakOutTime, breakInTime }]
-    //     }]
-    //   }
-    // Each item only includes the fields the user actually filled in — the
-    // backend treats missing fields as "no change" so we don't overwrite
-    // existing punches with empty values.
+    // POST /EmployeeAttendance/PostEmployeeManualAttendance
+    //   { Date (DD-MM-YYYY), FinancialYear, Reason,
+    //     Items: [{ EmployeeCode, BiometricEmployeeId, Status,
+    //               LoginTime (HH:MM:SS), LogoutTime,
+    //               Breaks: [{ BreakNo, BreakOutTime, BreakInTime }] }] }
+    // Note the PascalCase keys — this endpoint is not camelCase like the others.
+    // Only rows the user actually filled in are sent, so an untouched row can't
+    // overwrite an existing punch with an empty value.
     const handleSaveAttendance = async () => {
         // Append ":00" so HH:MM from the time inputs becomes HH:MM:SS for the API.
         const toApiTime = (hhmm) => (hhmm && hhmm.length === 5 ? `${hhmm}:00` : (hhmm || ''));
@@ -1253,23 +1091,23 @@ export default function AddStaffAttendancePage() {
             //     backend ASSIGNS one and creates a new row (A3).
             const breaks = (breaksMap[s.id] || [])
                 .filter(br => computeBreakDuration(br.out, br.in) > 0)
-                .map(br => {
-                    const entry = {
-                        breakOutTime: toApiTime(br.out),
-                        breakInTime:  toApiTime(br.in),
-                    };
-                    if (Number.isInteger(br.breakNo)) entry.breakNo = br.breakNo;
-                    return entry;
-                });
+                .map((br, i) => ({
+                    // The server numbers breaks per employee per day. Keep the number
+                    // it gave us so an edit updates that break; a new break takes the
+                    // next number in sequence.
+                    BreakNo: Number.isInteger(br.breakNo) ? br.breakNo : i + 1,
+                    BreakOutTime: toApiTime(br.out),
+                    BreakInTime:  toApiTime(br.in),
+                }));
 
             const item = {
-                rollNumber: s.rollNumber,
-                employeeId: s.employeeId || '',
-                status: apiStatus,
+                EmployeeCode: s.employeeCode,
+                BiometricEmployeeId: s.biometricEmployeeId ?? null,
+                Status: apiStatus,
+                Breaks: breaks,          // always sent — [] clears the day's breaks
             };
-            if (hasTime && checkIn)  item.loginTime  = toApiTime(checkIn);
-            if (hasTime && checkOut) item.logoutTime = toApiTime(checkOut);
-            if (breaks.length > 0)   item.breaks     = breaks;
+            if (hasTime && checkIn)  item.LoginTime  = toApiTime(checkIn);
+            if (hasTime && checkOut) item.LogoutTime = toApiTime(checkOut);
             return item;
         }).filter(Boolean);
 
@@ -1291,18 +1129,21 @@ export default function AddStaffAttendancePage() {
             .filter(n => n.length > 0);
         const reason = allNotes.length > 0 ? allNotes.join(' · ') : '';
 
+        if (!financialYear) {
+            showSnack('Set the financial year first — attendance is saved against it.', false);
+            return;
+        }
+
         const body = {
-            editorRollNumber: currentUserRoll,
-            date: attendanceDate, // already YYYY-MM-DD from the date input
-            academicYear: getCurrentAcademicYear(),
-            reason,
-            items,
+            Date: toApiDate(attendanceDate),   // the date input gives YYYY-MM-DD; the API wants DD-MM-YYYY
+            FinancialYear: financialYear,
+            Reason: reason,
+            Items: items,
         };
 
+        setSaving(true);
         try {
-            const res = await axios.post(PostTeachersManualAttendance, body, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.post(PostEmployeeManualAttendance, body);
             if (res?.data && res.data.error) {
                 showSnack(res.data.message || 'Failed to save attendance', false);
                 return;
@@ -1312,9 +1153,13 @@ export default function AddStaffAttendancePage() {
                 ? ` · ${skippedIncomplete} skipped (missing check-in)`
                 : '';
             showSnack(baseMsg + tail, true);
-            setIsAttendanceAddedMap(prev => ({ ...prev, [userTypeFilter]: true }));
+            // Re-read so the rows show what was actually stored — including the
+            // break numbers the server assigned, which the next edit depends on.
+            await fetchAttendance();
         } catch (error) {
             showSnack(error?.response?.data?.message || 'Failed to save attendance', false);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -1389,7 +1234,7 @@ export default function AddStaffAttendancePage() {
                 </Box>
             </Box>
 
-            {isCurrentTypeAdded && (
+            {isAttendanceAdded && (
                 <Box sx={{
                     mb: 2, px: 1.5, py: 1, borderRadius: '7px',
                     bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`,
@@ -1397,7 +1242,7 @@ export default function AddStaffAttendancePage() {
                 }}>
                     <CheckCircleIcon sx={{ fontSize: 18, color: PRIMARY }} />
                     <Typography sx={{ fontSize: '12px', color: PRIMARY_DARK, fontWeight: 500 }}>
-                        Attendance already marked for <strong>{userTypeFilter}</strong> on this date — edits will update the existing record.
+                        Attendance already marked on this date — edits will update the existing record.
                     </Typography>
                 </Box>
             )}
@@ -1470,18 +1315,33 @@ export default function AddStaffAttendancePage() {
                     }}
                 />
                 <Select
-                    value={userTypeFilter}
-                    onChange={(e) => setUserTypeFilter(e.target.value)}
+                    value={designationFilter}
+                    onChange={(e) => setDesignationFilter(e.target.value)}
                     size="small"
                     sx={{
-                        minWidth: 160, bgcolor: '#fff', fontSize: '13px', height: 36, borderRadius: '50px',
+                        minWidth: 180, bgcolor: '#fff', fontSize: '13px', height: 36, borderRadius: '50px',
                         '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E5E7EB' },
                     }}
                 >
-                    {userTypes.map(type => (
-                        <MenuItem key={type} value={type} sx={{ fontSize: '13px' }}>{type}</MenuItem>
+                    {designations.map(d => (
+                        <MenuItem key={d} value={d} sx={{ fontSize: '13px' }}>
+                            {d === 'All' ? 'All designations' : d}
+                        </MenuItem>
                     ))}
                 </Select>
+
+                <Button
+                    size="small" variant="outlined"
+                    startIcon={<HistoryIcon sx={{ fontSize: 17 }} />}
+                    onClick={() => navigate(`/dashboard/attendance-history?date=${attendanceDate}`)}
+                    sx={{
+                        textTransform: 'none', fontSize: '12px', fontWeight: 600, height: 36, borderRadius: '50px',
+                        borderColor: '#D1D5DB', color: '#374151', px: 1.8,
+                        '&:hover': { borderColor: '#9CA3AF', bgcolor: '#F9FAFB' },
+                    }}
+                >
+                    Edit History
+                </Button>
 
                 <Button
                     size="small" variant="outlined"
@@ -1816,21 +1676,22 @@ export default function AddStaffAttendancePage() {
                         </Box>
                         <Button
                             variant="contained"
-                            startIcon={<SaveIcon />}
+                            startIcon={saving ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <SaveIcon />}
                             onClick={handleSaveAttendance}
-                            disabled={staffList.length === 0}
+                            disabled={staffList.length === 0 || saving || loading}
                             sx={{
                                 textTransform: 'none', fontSize: '13px', fontWeight: 700,
-                                bgcolor: isCurrentTypeAdded ? '#1D4ED8' : PRIMARY,
+                                bgcolor: isAttendanceAdded ? '#1D4ED8' : PRIMARY,
                                 borderRadius: '7px', px: 3,
-                                boxShadow: `0 2px 6px ${isCurrentTypeAdded ? '#1D4ED8' : PRIMARY}33`,
+                                boxShadow: `0 2px 6px ${isAttendanceAdded ? '#1D4ED8' : PRIMARY}33`,
                                 '&:hover': {
-                                    bgcolor: isCurrentTypeAdded ? '#1E40AF' : PRIMARY_DARK,
-                                    boxShadow: `0 4px 12px ${isCurrentTypeAdded ? '#1D4ED8' : PRIMARY}55`,
+                                    bgcolor: isAttendanceAdded ? '#1E40AF' : PRIMARY_DARK,
+                                    boxShadow: `0 4px 12px ${isAttendanceAdded ? '#1D4ED8' : PRIMARY}55`,
                                 },
+                                '&.Mui-disabled': { bgcolor: '#E2E8F0', color: '#94A3B8' },
                             }}
                         >
-                            {isCurrentTypeAdded ? 'Update Attendance' : 'Save Attendance'}
+                            {saving ? 'Saving…' : (isAttendanceAdded ? 'Update Attendance' : 'Save Attendance')}
                         </Button>
                     </Box>
                 )}

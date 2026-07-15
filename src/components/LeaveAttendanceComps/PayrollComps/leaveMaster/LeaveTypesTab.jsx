@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Box, Typography, Button, Grid, IconButton,
     TextField, Autocomplete, Tooltip,
-    Dialog, CircularProgress, Chip,
+    Dialog, CircularProgress, Chip, Skeleton, InputAdornment,
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import AddIcon from '@mui/icons-material/Add';
@@ -15,13 +15,23 @@ import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded';
 import AllInclusiveRoundedIcon from '@mui/icons-material/AllInclusiveRounded';
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded';
-import axios from 'axios';
-import { GetleaveTypes, postleavetypes, UpdateleaveTypeByID, DeleteleaveTypeByID } from '../../../../Api/Api';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import http from '../../../../Api/http';
 import {
-    PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK, TOKEN,
+    GetLeaveTypes, GetLeaveTypeByID, PostLeaveType,
+    UpdateLeaveTypeByID, DeleteLeaveTypeByID,
+} from '../../../../Api/Api';
+import {
+    PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK,
     FREQUENCY_TO_API, FREQUENCY_FROM_API, UNUSED_ACTION_TO_API, UNUSED_ACTION_FROM_API,
-    Section, ToggleRow,
+    ToggleRow,
 } from './LeaveMasterShared';
+
+// Same surface treatment as Employees / Salary Structures: white card, hairline
+// border, 7px radius, one soft shadow.
+const PRIMARY_BORDER = '#C9BEFB';
+const card = { bgcolor: '#fff', border: '1px solid #E6EAF1', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.06)' };
+const tonalBtn = { bgcolor: PRIMARY_LIGHT, color: PRIMARY, border: `1px solid ${PRIMARY_BORDER}`, fontWeight: 700, borderRadius: '7px', boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: '#E7DFFC' } };
 
 const LEAVE_COLORS = [
     '#7C5CFC', '#EF4444', '#9B87FB', '#EC4899', '#06B6D4',
@@ -66,6 +76,39 @@ const emptyLeaveForm = {
     documentHint: '',              // free-text hint shown to user (e.g., "Medical certificate")
 };
 
+// One API leave type → the form/card shape this tab works in. Both GetLeaveTypes
+// (list) and GetLeaveTypeByID (single) return the same object, so they share this.
+// Numbers arrive as decimals (12.00) — Number() keeps them usable in inputs.
+const fromApiLeaveType = (lt = {}) => ({
+    id: lt.id,
+    name: lt.name || '',
+    shortCode: lt.shortCode || '',
+    color: lt.colorTag || '#7C5CFC',
+    description: lt.description || '',
+    daysPerPeriod: Number(lt.numberOfDays) || 0,
+    allocationPeriod: FREQUENCY_FROM_API[lt.allocationPeriod] || lt.allocationPeriod || 'Yearly',
+    maxPerMonth: Number(lt.maxDaysPerMonth) || 0,
+    unusedLeaveAction: UNUSED_ACTION_FROM_API[lt.unusedAction] || 'lapse',
+    blockContinuousLeave: !!lt.BlockContinuousLeave,
+    requiresDocument: !!lt.requireSupportingDocument,
+
+    // Server-computed / read-only.
+    monthlyEquivalent: Number(lt.monthlyEquivalent) || 0,
+    financialYear: lt.financialYear || '',
+    isActive: lt.isActive !== false,
+    createdBy: lt.createdBy || null,
+    createdOn: lt.createdOn || null,
+    updatedBy: lt.updatedBy || null,
+    updatedOn: lt.updatedOn || null,
+
+    // Not in the API — the dialog still collects these, so they're defaulted
+    // rather than left undefined (see the note at the bottom of this file).
+    advanceUsageAllowed: true,
+    encashmentTiming: 'End of Period',
+    encashmentFormula: 'gross_by_working_days',
+    documentHint: '',
+});
+
 const getMonthsInPeriod = (period) => {
     const p = LP_ALLOCATION_PERIODS.find(a => a.key === period);
     return p?.months || 1;
@@ -88,9 +131,11 @@ const getPeriodLabel = (period) => {
     return 'year';
 };
 
-export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
+export default function LeaveTypesTab({ financialYear, authUser, showSnack }) {
+    const [search, setSearch] = useState('');
     const [policies, setPolicies] = useState([]);
     const [isLoadingPolicies, setIsLoadingPolicies] = useState(false);
+    const [isLoadingPolicy, setIsLoadingPolicy] = useState(false);   // GetLeaveTypeByID, on edit
     const [isSavingPolicy, setIsSavingPolicy] = useState(false);
     const [policyDialogOpen, setPolicyDialogOpen] = useState(false);
     const [deletePolicyDialogOpen, setDeletePolicyDialogOpen] = useState(false);
@@ -138,13 +183,12 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
     };
 
     const fetchLeavePolicies = async (year) => {
-        const ay = year || academicYear;
-        if (!ay) return;
+        const fy = year || financialYear;
+        if (!fy) return;
         setIsLoadingPolicies(true);
         try {
-            const res = await axios.get(GetleaveTypes, {
-                params: { academicYear: ay },
-                headers: { Authorization: `Bearer ${TOKEN}` },
+            const res = await http.get(GetLeaveTypes, {
+                params: { financialYear: fy },
             });
             if (res?.data && res.data.error === false && res.data.data) {
                 const d = res.data.data;
@@ -155,30 +199,7 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
                     onDemandUnlimited: Number(summary.onDemand) || 0,
                     encashableLeaveTypes: Number(summary.encashable) || 0,
                 });
-                setPolicies((d.items || []).map(lt => ({
-                    id: lt.id,
-                    name: lt.name || '',
-                    shortCode: lt.shortCode || '',
-                    color: lt.colorTag || '#7C5CFC',
-                    description: lt.description || '',
-                    daysPerPeriod: Number(lt.numberOfDays) || 0,
-                    allocationPeriod: FREQUENCY_FROM_API[lt.allocationPeriod] || lt.allocationPeriod || 'Yearly',
-                    advanceUsageAllowed: !!lt.advanceUsageAllowed,
-                    maxPerMonth: Number(lt.maxDaysPerMonth) || 0,
-                    unusedLeaveAction: UNUSED_ACTION_FROM_API[lt.unusedAction] || 'lapse',
-                    blockContinuousLeave: !!lt.BlockContinuousLeave,
-                    requiresDocument: !!lt.requireSupportingDocument,
-                    encashmentTiming: 'End of Period',
-                    encashmentFormula: 'gross_by_working_days',
-                    documentHint: '',
-                    academicYear: lt.academicYear || ay,
-                    isActive: lt.isActive !== false,
-                    monthlyEquivalent: Number(lt.monthlyEquivalent) || 0,
-                    createdBy: lt.createdBy || null,
-                    createdOn: lt.createdOn || null,
-                    updatedBy: lt.updatedBy || null,
-                    updatedOn: lt.updatedOn || null,
-                })));
+                setPolicies((d.items || []).map(fromApiLeaveType).filter(p => p.isActive));
             } else if (res?.data && res.data.error) {
                 setPolicies([]);
                 setPolicyStats({ totalLeaveTypes: 0, totalDaysPerMonth: 0, onDemandUnlimited: 0, encashableLeaveTypes: 0 });
@@ -200,8 +221,8 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
     };
 
     useEffect(() => {
-        fetchLeavePolicies(academicYear);
-    }, [academicYear]);
+        fetchLeavePolicies(financialYear);
+    }, [financialYear]);
 
     const handleAddPolicy = () => {
         setEditingPolicy(null);
@@ -210,11 +231,30 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
         setPolicyDialogOpen(true);
     };
 
-    const handleEditPolicy = (policy) => {
+    // Open on the list row immediately (so the dialog isn't blank), then refresh
+    // from GetLeaveTypeByID — the list can be stale if someone else edited this
+    // type, and an edit saves the whole record, not just what changed.
+    const handleEditPolicy = async (policy) => {
         setEditingPolicy(policy);
         setPolicyForm({ ...emptyLeaveForm, ...policy });
         setPolicyErrors({});
         setPolicyDialogOpen(true);
+
+        if (!policy?.id) return;
+        setIsLoadingPolicy(true);
+        try {
+            const res = await http.get(GetLeaveTypeByID, { params: { id: policy.id } });
+            if (res?.data?.error === false && res.data.data) {
+                const fresh = fromApiLeaveType(res.data.data);
+                setEditingPolicy(fresh);
+                setPolicyForm({ ...emptyLeaveForm, ...fresh });
+            }
+        } catch (err) {
+            console.error('GetLeaveTypeByID failed:', err);
+            showSnack('Could not refresh this leave type — showing the last loaded values.', false);
+        } finally {
+            setIsLoadingPolicy(false);
+        }
     };
 
     const handleDeletePolicyClick = (policy) => {
@@ -236,18 +276,10 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
             showSnack('Type the word "delete" to confirm.', false);
             return;
         }
-        if (!authUser?.rollNumber) {
-            showSnack('Cannot delete: no logged-in user found.', false);
-            return;
-        }
 
         setIsDeletingPolicy(true);
         try {
-            const url = `${DeleteleaveTypeByID}/${deletePolicyTarget.id}`;
-            const res = await axios.delete(url, {
-                params: { updatedByRollNumber: authUser.rollNumber },
-                headers: { Authorization: `Bearer ${TOKEN}` },
-            });
+            const res = await http.delete(`${DeleteLeaveTypeByID}/${deletePolicyTarget.id}`);
             const ok = !res?.data || res.data.error === false;
             if (ok) {
                 showSnack(
@@ -275,13 +307,15 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
             showSnack('Please correct the highlighted fields', false);
             return;
         }
-        if (!authUser?.rollNumber) {
-            showSnack('Cannot save: no logged-in user found.', false);
+        if (!financialYear) {
+            showSnack('Set the financial year first — leave types are saved against it.', false);
             return;
         }
 
+        // The create and update bodies are identical except for the key: creating
+        // states which financial year the type belongs to, updating never moves an
+        // existing type between years (the id already pins it).
         const body = {
-            academicYear,
             name: policyForm.name.trim(),
             shortCode: policyForm.shortCode.trim().toUpperCase(),
             colorTag: policyForm.color,
@@ -292,19 +326,14 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
             unusedAction: UNUSED_ACTION_TO_API[policyForm.unusedLeaveAction] || 'Lapse',
             BlockContinuousLeave: !!policyForm.blockContinuousLeave,
             requireSupportingDocument: !!policyForm.requiresDocument,
-            updatedByRollNumber: authUser.rollNumber,
         };
 
         setIsSavingPolicy(true);
         try {
             const isEdit = !!editingPolicy?.id;
             const res = isEdit
-                ? await axios.put(`${UpdateleaveTypeByID}/${editingPolicy.id}`, body, {
-                    headers: { Authorization: `Bearer ${TOKEN}` },
-                })
-                : await axios.post(postleavetypes, body, {
-                    headers: { Authorization: `Bearer ${TOKEN}` },
-                });
+                ? await http.put(`${UpdateLeaveTypeByID}/${editingPolicy.id}`, body)
+                : await http.post(PostLeaveType, { financialYear, ...body });
             const ok = !res?.data || res.data.error === false;
             if (ok) {
                 showSnack(
@@ -330,49 +359,39 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
         }
     };
 
+    const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        if (!q) return policies;
+        return policies.filter(p =>
+            `${p.name} ${p.shortCode} ${p.description}`.toLowerCase().includes(q)
+        );
+    }, [policies, search]);
+
+    const KPIS = [
+        { label: 'Total Types', value: policyStats.totalLeaveTypes, sub: 'Configured', icon: CategoryRoundedIcon, color: PRIMARY, bg: PRIMARY_LIGHT },
+        { label: 'Days / Month', value: `${policyStats.totalDaysPerMonth}d`, sub: 'Combined accrual', icon: EventAvailableRoundedIcon, color: '#16A34A', bg: '#DCFCE7' },
+        { label: 'On-Demand', value: policyStats.onDemandUnlimited, sub: 'Unlimited types', icon: AllInclusiveRoundedIcon, color: '#F59E0B', bg: '#FFF7ED' },
+        { label: 'Encashable', value: policyStats.encashableLeaveTypes, sub: 'Paid on unused', icon: PaidRoundedIcon, color: '#0EA5E9', bg: '#E0F2FE' },
+    ];
+
     return (
         <>
-            <Section icon={PolicyIcon} title="Leave Policy & Allocation" color={PRIMARY}
-                subtitle="Create each leave type with its own allocation period, accrual, end-of-period action, and deduction rule">
-
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={handleAddPolicy}
-                        sx={{
-                            textTransform: 'none', bgcolor: PRIMARY, color: '#fff', borderRadius: '7px',
-                            fontSize: '13px', fontWeight: 700, px: 2.2, height: 40, boxShadow: 'none',
-                            '& .MuiButton-startIcon': { color: '#fff' },
-                            '&:hover': { bgcolor: PRIMARY_DARK, color: '#fff', boxShadow: 'none' },
-                        }}
-                    >
-                        Add Leave Type
-                    </Button>
-                </Box>
-
-                <Grid container spacing={1.5} sx={{ mb: 2 }}>
-                    {[
-                        { label: 'Total Types', value: policyStats.totalLeaveTypes, sub: 'Configured', icon: CategoryRoundedIcon, color: '#7C5CFC', bg: '#F1EEFE' },
-                        { label: 'Days / Month', value: `${policyStats.totalDaysPerMonth}d`, sub: 'Combined accrual', icon: EventAvailableRoundedIcon, color: '#16A34A', bg: '#DCFCE7' },
-                        { label: 'On-Demand', value: policyStats.onDemandUnlimited, sub: 'Unlimited types', icon: AllInclusiveRoundedIcon, color: '#F59E0B', bg: '#FFF7ED' },
-                        { label: 'Encashable', value: policyStats.encashableLeaveTypes, sub: 'Paid on unused', icon: PaidRoundedIcon, color: '#0EA5E9', bg: '#E0F2FE' },
-                    ].map((s, i) => (
-                        <Grid size={{ xs: 6, md: 3 }} key={i}>
-                            <Box sx={{
-                                p: 2, borderRadius: '7px', bgcolor: s.bg, border: `1px solid ${s.color}22`,
-                                boxShadow: '0 1px 3px rgba(16,24,40,0.06)', height: '100%',
-                                transition: 'transform .18s, box-shadow .18s',
-                                '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 8px 20px ${s.color}22` },
-                            }}>
+            <Box sx={{ px: 2, pb: 2 }}>
+                {/* KPI row */}
+                <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
+                    {KPIS.map((s) => (
+                        <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={s.label}>
+                            <Box sx={{ ...card, p: 2.5, bgcolor: s.bg, border: `1px solid ${s.color}22` }}>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                     <Box sx={{ minWidth: 0 }}>
-                                        <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</Typography>
-                                        <Typography sx={{ fontSize: 26, fontWeight: 800, color: '#0F172A', mt: 0.3, lineHeight: 1.1 }}>{s.value}</Typography>
-                                        <Typography sx={{ fontSize: 10.5, color: '#6B7280', mt: 0.2 }}>{s.sub}</Typography>
+                                        <Typography sx={{ fontSize: 11, fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</Typography>
+                                        {isLoadingPolicies
+                                            ? <Skeleton variant="text" width={54} height={36} />
+                                            : <Typography sx={{ fontSize: 28, fontWeight: 800, color: '#0F172A', mt: 0.4, lineHeight: 1.1 }}>{s.value}</Typography>}
+                                        <Typography sx={{ fontSize: 11, color: '#6B7280', mt: 0.2 }}>{s.sub}</Typography>
                                     </Box>
-                                    <Box sx={{ width: 40, height: 40, borderRadius: '7px', bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        <s.icon sx={{ color: s.color, fontSize: 20 }} />
+                                    <Box sx={{ width: 44, height: 44, borderRadius: '7px', bgcolor: '#fff', boxShadow: '0 1px 3px rgba(16,24,40,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <s.icon sx={{ color: s.color, fontSize: 22 }} />
                                     </Box>
                                 </Box>
                             </Box>
@@ -380,192 +399,193 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
                     ))}
                 </Grid>
 
-                <Box sx={{
-                    mb: 2, p: 1.5, borderRadius: '7px',
-                    bgcolor: '#E0F2FE', border: '1px solid #BAE6FD',
-                    display: 'flex', alignItems: 'flex-start', gap: 1,
-                }}>
-                    <InfoOutlinedIcon sx={{ fontSize: 16, color: '#F59E0B', mt: 0.2, flexShrink: 0 }} />
-                    <Typography sx={{ fontSize: 11, color: '#78350F', lineHeight: 1.7 }}>
-                        Each leave type defines its <strong>allocation period</strong> (Monthly / Quarterly / Half-Yearly / Yearly),
-                        its accrual rate (<strong>days per month</strong>), and an <strong>end-of-period action</strong> for unused days
-                        (Encash / Carry Forward / Lapse). Set <strong>0</strong> days for on-demand leaves.
-                        Salary will be deducted for any leave taken beyond the allocation when the deduction rule is on.
+                {/* How allocation works */}
+                <Box sx={{ ...card, p: 1.8, mb: 1.5, display: 'flex', alignItems: 'flex-start', gap: 1.2, bgcolor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                    <InfoOutlinedIcon sx={{ fontSize: 18, color: '#B45309', mt: 0.1, flexShrink: 0 }} />
+                    <Typography sx={{ fontSize: 12, color: '#78350F', lineHeight: 1.7 }}>
+                        Each leave type has an <strong>allocation period</strong> (Monthly / Quarterly / Half-Yearly / Yearly), a number of
+                        <strong> days per period</strong>, and an <strong>end-of-period action</strong> for anything unused
+                        (Encash / Carry Forward / Lapse). Set <strong>0 days</strong> for an on-demand, unlimited type.
                     </Typography>
                 </Box>
 
-                {isLoadingPolicies ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
-                        <CircularProgress size={28} sx={{ color: PRIMARY }} />
-                    </Box>
-                ) : policies.length === 0 ? (
+                {/* List */}
+                <Box sx={{ ...card, p: 0, overflow: 'hidden' }}>
                     <Box sx={{
-                        textAlign: 'center', py: 4, borderRadius: '7px',
-                        border: '1px dashed #D1D5DB', bgcolor: '#FAFAFA',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        p: 2.5, flexWrap: 'wrap', gap: 1.5,
+                        bgcolor: '#F7F6FD', borderBottom: '1px solid #EAE7F7',
                     }}>
-                        <Typography sx={{ fontSize: '13px', color: '#888', mb: 1 }}>
-                            No leave types created yet
-                        </Typography>
-                        <Button size="small" variant="outlined" startIcon={<AddIcon />}
-                            onClick={handleAddPolicy}
-                            sx={{
-                                textTransform: 'none', fontSize: '12px', fontWeight: 600, borderRadius: '30px',
-                                borderColor: PRIMARY, color: PRIMARY,
-                                '&:hover': { borderColor: PRIMARY_DARK, bgcolor: PRIMARY_LIGHT },
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
+                            <Box sx={{ width: 32, height: 32, borderRadius: '9px', bgcolor: '#fff', boxShadow: '0 1px 4px rgba(16,24,40,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <PolicyIcon sx={{ color: PRIMARY, fontSize: 18 }} />
+                            </Box>
+                            <Typography sx={{ fontSize: 15.5, fontWeight: 800, color: '#0F172A' }}>Leave Policy &amp; Allocation</Typography>
+                            <Chip
+                                label={isLoadingPolicies ? 'Loading…' : `${filtered.length} type${filtered.length === 1 ? '' : 's'}`}
+                                size="small"
+                                sx={{ bgcolor: PRIMARY_LIGHT, color: PRIMARY, fontWeight: 700, fontSize: 11.5 }}
+                            />
+                            {financialYear && (
+                                <Chip label={financialYear} size="small"
+                                    sx={{ bgcolor: '#fff', color: '#475569', fontWeight: 700, fontSize: 11.5, border: '1px solid #E6EAF1' }} />
+                            )}
+                        </Box>
+
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                            <TextField
+                                placeholder="Search leave types…"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                size="small"
+                                sx={{ width: { xs: '100%', sm: 230 }, '& .MuiOutlinedInput-root': { borderRadius: '50px', bgcolor: '#fff', fontSize: 13, height: 38 } }}
+                                InputProps={{ startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 18, color: '#9CA3AF' }} /></InputAdornment> }}
+                            />
+                            <Button
+                                startIcon={<AddIcon sx={{ fontSize: 18 }} />}
+                                onClick={handleAddPolicy}
+                                sx={{ ...tonalBtn, height: 38, px: 2, fontSize: 12.5 }}
+                            >
+                                Add Leave Type
+                            </Button>
+                        </Box>
+                    </Box>
+
+                    <Box sx={{ p: 2 }}>
+                        {isLoadingPolicies ? (
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
+                                {[0, 1, 2].map(i => <Skeleton key={i} variant="rounded" height={196} sx={{ borderRadius: '7px' }} />)}
+                            </Box>
+                        ) : filtered.length === 0 ? (
+                            <Box sx={{ textAlign: 'center', py: 6 }}>
+                                <CategoryRoundedIcon sx={{ fontSize: 34, color: '#CBD2DD' }} />
+                                <Typography sx={{ fontSize: 14, color: '#98A0AE', mt: 1, mb: 1.5 }}>
+                                    {search
+                                        ? 'No leave types match your search'
+                                        : `No leave types for ${financialYear || 'this year'} yet`}
+                                </Typography>
+                                {!search && (
+                                    <Button startIcon={<AddIcon sx={{ fontSize: 18 }} />} onClick={handleAddPolicy} sx={{ ...tonalBtn, height: 38, px: 2, fontSize: 12.5 }}>
+                                        Create your first leave type
+                                    </Button>
+                                )}
+                            </Box>
+                        ) : (
+                            <Box sx={{
+                                display: 'grid',
+                                gridTemplateColumns: {
+                                    xs: '1fr',
+                                    sm: 'repeat(2, minmax(0, 1fr))',
+                                    lg: 'repeat(3, minmax(0, 1fr))',
+                                },
+                                gap: 2,
+                                alignItems: 'stretch',
                             }}>
-                            Create your first leave type
-                        </Button>
-                    </Box>
-                ) : (
-                    <Box sx={{
-                        display: 'grid',
-                        gridTemplateColumns: {
-                            xs: '1fr',
-                            sm: 'repeat(2, minmax(0, 1fr))',
-                            md: 'repeat(2, minmax(0, 1fr))',
-                            lg: 'repeat(3, minmax(0, 1fr))',
-                        },
-                        gap: 2,
-                        alignItems: 'stretch',
-                    }}>
-                        {policies.map(policy => {
-                            const isOnDemand = isOnDemandPolicy(policy);
-                            const totalDays = getEffectiveTotalDays(policy);
-                            const action = UNUSED_ACTIONS.find(a => a.key === policy.unusedLeaveAction) || UNUSED_ACTIONS[2];
-                            return (
-                                <Box key={policy.id} sx={{
-                                    border: `1px solid ${policy.color}40`,
-                                    borderTop: `3px solid ${policy.color}`,
-                                    borderRadius: '7px',
-                                    bgcolor: '#fff', p: 2,
-                                    display: 'flex', flexDirection: 'column',
-                                    minHeight: 200, boxSizing: 'border-box',
-                                    transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.2s',
-                                    '&:hover': { borderColor: policy.color, boxShadow: `0 6px 16px ${policy.color}25`, transform: 'translateY(-2px)' },
-                                }}>
-                                    <Box sx={{
-                                        display: 'flex', justifyContent: 'space-between',
-                                        alignItems: 'flex-start', mb: 1.5, gap: 1,
-                                    }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
+                                {filtered.map(policy => {
+                                    const isOnDemand = isOnDemandPolicy(policy);
+                                    const totalDays = getEffectiveTotalDays(policy);
+                                    const action = UNUSED_ACTIONS.find(a => a.key === policy.unusedLeaveAction) || UNUSED_ACTIONS[2];
+                                    return (
+                                        <Box key={policy.id} sx={{
+                                            ...card,
+                                            borderTop: `3px solid ${policy.color}`,
+                                            p: 2,
+                                            display: 'flex', flexDirection: 'column',
+                                            minHeight: 196, boxSizing: 'border-box',
+                                            transition: 'transform .18s, box-shadow .18s, border-color .18s',
+                                            '&:hover': { borderColor: `${policy.color}66`, boxShadow: `0 8px 20px ${policy.color}22`, transform: 'translateY(-2px)' },
+                                        }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5, gap: 1 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0, flex: 1 }}>
+                                                    <Box sx={{
+                                                        width: 38, height: 38, borderRadius: '7px',
+                                                        bgcolor: `${policy.color}15`, flexShrink: 0,
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        border: `1px solid ${policy.color}40`,
+                                                    }}>
+                                                        <Typography sx={{ fontSize: 12, fontWeight: 900, color: policy.color }}>
+                                                            {policy.shortCode}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                        <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }} noWrap>{policy.name}</Typography>
+                                                        {policy.description && (
+                                                            <Typography sx={{ fontSize: 11.5, color: '#98A0AE' }} noWrap>{policy.description}</Typography>
+                                                        )}
+                                                    </Box>
+                                                </Box>
+                                                <Box sx={{ display: 'flex', gap: 0.3, flexShrink: 0 }}>
+                                                    <Tooltip title="Edit" arrow>
+                                                        <IconButton size="small" onClick={() => handleEditPolicy(policy)}
+                                                            sx={{ width: 28, height: 28, color: '#94A3B8', '&:hover': { color: PRIMARY, bgcolor: PRIMARY_LIGHT } }}>
+                                                            <EditIcon sx={{ fontSize: 15 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                    <Tooltip title="Delete" arrow>
+                                                        <IconButton size="small" onClick={() => handleDeletePolicyClick(policy)}
+                                                            sx={{ width: 28, height: 28, color: '#94A3B8', '&:hover': { color: '#DC2626', bgcolor: '#FEF2F2' } }}>
+                                                            <DeleteIcon sx={{ fontSize: 15 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </Box>
+                                            </Box>
+
                                             <Box sx={{
-                                                width: 38, height: 38, borderRadius: '7px',
-                                                bgcolor: `${policy.color}15`, flexShrink: 0,
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                border: `1.5px solid ${policy.color}40`,
+                                                p: 1.4, borderRadius: '7px', mb: 1.2,
+                                                bgcolor: '#F8FAFC', border: '1px solid #EEF1F6',
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                                             }}>
-                                                <Typography sx={{ fontSize: 12, fontWeight: 900, color: policy.color }}>
-                                                    {policy.shortCode}
-                                                </Typography>
+                                                <Box>
+                                                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.6 }}>
+                                                        <Typography sx={{ fontSize: 22, fontWeight: 800, color: policy.color, lineHeight: 1 }}>
+                                                            {isOnDemand ? '∞' : totalDays}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: 11.5, color: '#64748B', fontWeight: 600 }}>
+                                                            {isOnDemand ? 'on-demand' : `day(s) / ${getPeriodLabel(policy.allocationPeriod)}`}
+                                                        </Typography>
+                                                    </Box>
+                                                    {!isOnDemand && policy.allocationPeriod !== 'Monthly' && (
+                                                        <Typography sx={{ fontSize: 10.5, color: '#98A0AE', mt: 0.3 }}>
+                                                            ≈ {getMonthlyEquivalent(policy).toFixed(2)} day(s) / month
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                                <Chip label={policy.allocationPeriod} size="small"
+                                                    sx={{ fontSize: 10, fontWeight: 700, height: 22, bgcolor: '#fff', color: policy.color, border: `1px solid ${policy.color}40` }} />
                                             </Box>
-                                            <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                    {policy.name}
-                                                </Typography>
-                                                {policy.description && (
-                                                    <Typography sx={{ fontSize: 11, color: '#999', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                        {policy.description}
-                                                    </Typography>
-                                                )}
-                                            </Box>
-                                        </Box>
-                                        <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
-                                            <Tooltip title="Edit" arrow>
-                                                <IconButton size="small" onClick={() => handleEditPolicy(policy)} sx={{ width: 26, height: 26 }}>
-                                                    <EditIcon sx={{ fontSize: 14, color: '#1976D2' }} />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title="Delete" arrow>
-                                                <IconButton size="small" onClick={() => handleDeletePolicyClick(policy)} sx={{ width: 26, height: 26 }}>
-                                                    <DeleteIcon sx={{ fontSize: 14, color: '#f44336' }} />
-                                                </IconButton>
-                                            </Tooltip>
-                                        </Box>
-                                    </Box>
 
-                                    <Box sx={{
-                                        p: 1.2, borderRadius: '7px', mb: 1.2,
-                                        bgcolor: `${policy.color}08`,
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                    }}>
-                                        <Box>
-                                            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
-                                                <Typography sx={{ fontSize: 22, fontWeight: 800, color: policy.color, lineHeight: 1 }}>
-                                                    {isOnDemand ? '∞' : totalDays}
-                                                </Typography>
-                                                <Typography sx={{ fontSize: 11, color: '#666', fontWeight: 600 }}>
-                                                    {isOnDemand ? 'on-demand' : `day(s) / ${getPeriodLabel(policy.allocationPeriod)}`}
-                                                </Typography>
-                                            </Box>
-                                            {!isOnDemand && policy.allocationPeriod !== 'Monthly' && (
-                                                <Typography sx={{ fontSize: 10, color: '#666', mt: 0.3, fontStyle: 'italic' }}>
-                                                    {policy.advanceUsageAllowed
-                                                        ? 'Lump sum — available from day 1'
-                                                        : 'Accrues monthly across the period'}
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                        <Chip label={policy.allocationPeriod} size="small"
-                                            sx={{ fontSize: 10, fontWeight: 700, height: 22, bgcolor: '#fff', color: policy.color, border: `1px solid ${policy.color}40` }} />
-                                    </Box>
+                                            <Box sx={{ mt: 'auto', display: 'flex', flexDirection: 'column', gap: 0.6 }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Typography sx={{ fontSize: 11.5, color: '#64748B' }}>End of period</Typography>
+                                                    <Chip label={action.label} size="small"
+                                                        sx={{ fontSize: 10, fontWeight: 700, height: 20, bgcolor: `${action.color}15`, color: action.color, border: `1px solid ${action.color}40` }} />
+                                                </Box>
 
-                                    <Box sx={{ mt: 'auto', display: 'flex', flexDirection: 'column', gap: 0.6 }}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <Typography sx={{ fontSize: 11, color: '#666' }}>End of period:</Typography>
-                                            <Chip label={action.label} size="small"
-                                                sx={{ fontSize: 10, fontWeight: 700, height: 20, bgcolor: `${action.color}15`, color: action.color, border: `1px solid ${action.color}40` }} />
+                                                {(policy.blockContinuousLeave || policy.requiresDocument || Number(policy.maxPerMonth) > 0) && (
+                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.4 }}>
+                                                        {Number(policy.maxPerMonth) > 0 && (
+                                                            <Chip label={`Max ${policy.maxPerMonth}/month`} size="small"
+                                                                sx={{ height: 20, fontSize: 10, fontWeight: 700, bgcolor: '#ECFEFF', color: '#155E75', border: '1px solid #A5F3FC' }} />
+                                                        )}
+                                                        {policy.blockContinuousLeave && (
+                                                            <Chip label="No back-to-back" size="small"
+                                                                sx={{ height: 20, fontSize: 10, fontWeight: 700, bgcolor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }} />
+                                                        )}
+                                                        {policy.requiresDocument && (
+                                                            <Chip label="Document required" size="small"
+                                                                sx={{ height: 20, fontSize: 10, fontWeight: 700, bgcolor: '#EEF2FF', color: '#4338CA', border: '1px solid #C7D2FE' }} />
+                                                        )}
+                                                    </Box>
+                                                )}
+                                            </Box>
                                         </Box>
-                                        {policy.unusedLeaveAction === 'encash' && (
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <Typography sx={{ fontSize: 11, color: '#666' }}>Credited:</Typography>
-                                                <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#333' }}>{policy.encashmentTiming}</Typography>
-                                            </Box>
-                                        )}
-
-                                        {(policy.blockContinuousLeave || policy.requiresDocument || Number(policy.maxPerMonth) > 0) && (
-                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.4 }}>
-                                                {Number(policy.maxPerMonth) > 0 && (
-                                                    <Chip
-                                                        label={`Max ${policy.maxPerMonth}/month`}
-                                                        size="small"
-                                                        sx={{
-                                                            height: 20, fontSize: 10, fontWeight: 700,
-                                                            bgcolor: '#ECFEFF', color: '#155E75',
-                                                            border: '1px solid #A5F3FC',
-                                                        }}
-                                                    />
-                                                )}
-                                                {policy.blockContinuousLeave && (
-                                                    <Chip
-                                                        label="Continuous Leave blocked"
-                                                        size="small"
-                                                        sx={{
-                                                            height: 20, fontSize: 10, fontWeight: 700,
-                                                            bgcolor: '#FEF3C7', color: '#92400E',
-                                                            border: '1px solid #BAE6FD',
-                                                        }}
-                                                    />
-                                                )}
-                                                {policy.requiresDocument && (
-                                                    <Chip
-                                                        label="Document required"
-                                                        size="small"
-                                                        sx={{
-                                                            height: 20, fontSize: 10, fontWeight: 700,
-                                                            bgcolor: '#EEF2FF', color: '#4338CA',
-                                                            border: '1px solid #C7D2FE',
-                                                        }}
-                                                    />
-                                                )}
-                                            </Box>
-                                        )}
-                                    </Box>
-                                </Box>
-                            );
-                        })}
+                                    );
+                                })}
+                            </Box>
+                        )}
                     </Box>
-                )}
-            </Section>
+                </Box>
+            </Box>
 
             <Dialog
                 open={policyDialogOpen}
@@ -587,11 +607,16 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
                             <PolicyIcon sx={{ fontSize: 20, color: PRIMARY }} />
                         </Box>
                         <Box>
-                            <Typography sx={{ fontWeight: 700, fontSize: '16px', color: '#1a1a1a', lineHeight: 1.2 }}>
-                                {editingPolicy ? 'Edit Leave Type' : 'Add Leave Type'}
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                                <Typography sx={{ fontWeight: 700, fontSize: '16px', color: '#1a1a1a', lineHeight: 1.2 }}>
+                                    {editingPolicy ? 'Edit Leave Type' : 'Add Leave Type'}
+                                </Typography>
+                                {isLoadingPolicy && <CircularProgress size={13} sx={{ color: PRIMARY }} />}
+                            </Box>
                             <Typography sx={{ fontSize: '11px', color: '#6B7280' }}>
-                                Set allocation, accrual, end-of-period action & special rules
+                                {isLoadingPolicy
+                                    ? 'Loading the latest saved values…'
+                                    : 'Set allocation, accrual, end-of-period action & special rules'}
                             </Typography>
                         </Box>
                     </Box>
@@ -1021,7 +1046,7 @@ export default function LeaveTypesTab({ academicYear, authUser, showSnack }) {
                     </Button>
                     <Button
                         onClick={handleSavePolicy}
-                        disabled={isSavingPolicy}
+                        disabled={isSavingPolicy || isLoadingPolicy}
                         sx={{
                             bgcolor: PRIMARY, borderRadius: '30px', textTransform: 'none',
                             px: 3, height: '30px', color: '#fff', fontSize: 13, fontWeight: 600,

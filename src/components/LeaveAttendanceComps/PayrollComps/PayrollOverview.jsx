@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
-    Box, Typography, Grid, Card, CardContent, Divider, IconButton, Chip, Button,
-    Paper, LinearProgress, Avatar, Stack, Select, MenuItem, Tooltip,
+    Box, Typography, Grid, Card, CardContent, Divider, IconButton, Chip,
+    Paper, Avatar, Select, MenuItem, Tooltip,
 } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -10,25 +10,14 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import PeopleIcon from '@mui/icons-material/People';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
-import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineRounded';
 import HowToRegIcon from '@mui/icons-material/HowToReg';
-import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import SavingsIcon from '@mui/icons-material/Savings';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import {
-    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
-    ResponsiveContainer, PieChart, Pie, Cell,
-} from 'recharts';
 
 // ─── Payroll Module Cards (existing) ────────────────────────────────────────
 const payrollModules = [
@@ -48,33 +37,7 @@ const PAYROLL_STAGES = [
     { key: 'paid', label: 'Salary Credited', description: 'Paid to bank & payslips shared', icon: SavingsIcon },
 ];
 
-// ─── Statutory rates (standard India) ───────────────────────────────────────
-const STATUTORY = {
-    PF_EMPLOYEE: 0.12,   // 12% of Basic + DA
-    PF_EMPLOYER: 0.12,
-    ESI_EMPLOYEE: 0.0075, // 0.75% of Gross (if gross ≤ ₹21,000)
-    ESI_EMPLOYER: 0.0325, // 3.25%
-    PT_MONTHLY: 200,    // Professional Tax (state-dependent)
-};
-
 // ─── Helpers ────────────────────────────────────────────────────────────────
-const formatINR = (n) => {
-    if (n == null || Number.isNaN(n)) return '₹0';
-    const x = Math.round(n).toString();
-    const lastThree = x.substring(x.length - 3);
-    const other = x.substring(0, x.length - 3);
-    const formatted = other !== '' ? other.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + lastThree : lastThree;
-    return '₹' + formatted;
-};
-
-const formatLakhs = (n) => {
-    if (n == null || Number.isNaN(n)) return '₹0';
-    if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)} Cr`;
-    if (n >= 100000) return `₹${(n / 100000).toFixed(2)} L`;
-    if (n >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
-    return `₹${n}`;
-};
-
 const monthOptions = () => {
     const opts = [];
     const now = new Date();
@@ -96,71 +59,6 @@ export default function PayrollOverview({ isEmbedded = false, onBack }) {
     // Current payroll cycle stage (0-indexed).
     // TODO: derive from backend — for now, show "Manager Approval" as current stage.
     const currentStage = 2;
-
-    // ─── Mock payroll snapshot ─────────────────────────────────────────────
-    // TODO: replace with API: /api/payroll/overview?month=YYYY-MM
-    const snapshot = useMemo(() => {
-        const totalEmployees = 156;
-        const activeEmployees = 152;
-
-        // Earnings
-        const basic = 2260000;   // 50% of gross roughly
-        const hra = 904000;    // 40% of basic
-        const allowances = 985000;    // conveyance + medical + special + LTA
-        const overtime = 85000;
-        const incentives = 120000;
-        const bonus = 169000;
-        const gross = basic + hra + allowances + overtime + incentives + bonus;
-
-        // Statutory deductions
-        const pfEmployee = Math.round(basic * STATUTORY.PF_EMPLOYEE);
-        const esiEmployee = Math.round(gross * 0.3 * STATUTORY.ESI_EMPLOYEE); // ~30% eligible
-        const pt = STATUTORY.PT_MONTHLY * activeEmployees;
-        const tds = 305000;
-        const loanRecovery = 45000;
-        const lopDeduction = 32000;
-        const totalDeductions = pfEmployee + esiEmployee + pt + tds + loanRecovery + lopDeduction;
-
-        const netPay = gross - totalDeductions;
-
-        // Leave-driven fields
-        const lopDays = 34;
-        const encashableDays = 87;
-
-        return {
-            totalEmployees, activeEmployees,
-            basic, hra, allowances, overtime, incentives, bonus, gross,
-            pfEmployee, esiEmployee, pt, tds, loanRecovery, lopDeduction, totalDeductions,
-            netPay, lopDays, encashableDays,
-            pendingApprovals: 12,
-        };
-    }, [selectedMonth]);
-
-    // 6-month trend (mock — replace with API)
-    const monthlyTrend = useMemo(() => ([
-        { month: 'Nov', gross: 4250000, net: 3685000, deductions: 565000 },
-        { month: 'Dec', gross: 4320000, net: 3745000, deductions: 575000 },
-        { month: 'Jan', gross: 4380000, net: 3802000, deductions: 578000 },
-        { month: 'Feb', gross: 4425000, net: 3846000, deductions: 579000 },
-        { month: 'Mar', gross: 4490000, net: 3910000, deductions: 580000 },
-        { month: 'Apr', gross: snapshot.gross, net: snapshot.netPay, deductions: snapshot.totalDeductions },
-    ]), [snapshot]);
-
-    // Earnings vs Deductions donut
-    const earningsDeductions = useMemo(() => ([
-        { name: 'Basic + HRA', value: snapshot.basic + snapshot.hra, color: '#6246E0' },
-        { name: 'Allowances', value: snapshot.allowances, color: '#00ACC1' },
-        { name: 'OT + Incentives', value: snapshot.overtime + snapshot.incentives + snapshot.bonus, color: '#16A34A' },
-        { name: 'Deductions', value: snapshot.totalDeductions, color: '#DC2626' },
-    ]), [snapshot]);
-
-    // Compliance status
-    const compliance = [
-        { name: 'PF', status: 'filed', amount: snapshot.pfEmployee * 2, dueDate: '15th', color: '#6246E0', description: 'Provident Fund' },
-        { name: 'ESI', status: 'pending', amount: Math.round(snapshot.esiEmployee * 5.33), dueDate: '21st', color: '#00ACC1', description: 'Employee State Insurance' },
-        { name: 'PT', status: 'filed', amount: snapshot.pt, dueDate: '15th', color: '#2563EB', description: 'Professional Tax' },
-        { name: 'TDS', status: 'pending', amount: snapshot.tds, dueDate: '7th', color: '#EA580C', description: 'Tax Deducted at Source' },
-    ];
 
     const handleBackClick = () => {
         if (isEmbedded && onBack) onBack();
@@ -258,62 +156,6 @@ export default function PayrollOverview({ isEmbedded = false, onBack }) {
             </Box>
         </Paper>
     );
-
-    // ─── Section: KPI Row ──────────────────────────────────────────────────
-    const renderKpis = () => {
-        const kpis = [
-            { title: 'Total Employees', value: snapshot.totalEmployees, sub: `${snapshot.activeEmployees} on-roll`, icon: PeopleIcon, color: '#8600BB', bg: '#F5F0FA' },
-            { title: 'Gross Payroll', value: formatLakhs(snapshot.gross), sub: 'Earnings before deductions', icon: AccountBalanceWalletIcon, color: '#6246E0', bg: '#F3F0FE', delta: '+2.8%' },
-            { title: 'Total Deductions', value: formatLakhs(snapshot.totalDeductions), sub: 'PF + ESI + PT + TDS + LOP', icon: ReceiptLongIcon, color: '#DC2626', bg: '#FEF2F2', delta: '-1.2%', deltaDown: true },
-            { title: 'Net Pay', value: formatLakhs(snapshot.netPay), sub: 'Disbursable to bank', icon: SavingsIcon, color: '#16A34A', bg: '#EFF5FF', delta: '+3.1%' },
-            { title: 'Pending Approvals', value: snapshot.pendingApprovals, sub: `${snapshot.lopDays} LOP days recorded`, icon: PendingActionsIcon, color: '#F97316', bg: '#FFF7ED' },
-        ];
-        return (
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-                {kpis.map((k, idx) => {
-                    const Icon = k.icon;
-                    return (
-                        <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2.4 }} key={idx}>
-                            <Paper elevation={0} sx={{
-                                p: 2, borderRadius: '7px', border: '1px solid #E5E7EB', bgcolor: '#fff',
-                                height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                                transition: 'all 0.2s',
-                                '&:hover': { boxShadow: `0 4px 12px ${k.color}25`, borderColor: `${k.color}55` },
-                            }}>
-                                <Box>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                                        <Typography sx={{ fontSize: '10px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                                            {k.title}
-                                        </Typography>
-                                        <Avatar sx={{ width: 32, height: 32, bgcolor: k.bg }}>
-                                            <Icon sx={{ fontSize: 18, color: k.color }} />
-                                        </Avatar>
-                                    </Box>
-                                    <Typography sx={{ fontSize: '22px', fontWeight: 800, color: '#111827', lineHeight: 1.1 }}>
-                                        {k.value}
-                                    </Typography>
-                                    <Typography sx={{ fontSize: '11px', color: '#6B7280', mt: 0.5 }}>
-                                        {k.sub}
-                                    </Typography>
-                                </Box>
-                                {k.delta && (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, mt: 1 }}>
-                                        {k.deltaDown
-                                            ? <TrendingDownIcon sx={{ fontSize: 13, color: '#16A34A' }} />
-                                            : <TrendingUpIcon sx={{ fontSize: 13, color: '#16A34A' }} />}
-                                        <Typography sx={{ fontSize: '10px', fontWeight: 700, color: '#16A34A' }}>
-                                            {k.delta}
-                                        </Typography>
-                                        <Typography sx={{ fontSize: '10px', color: '#9CA3AF' }}>vs last month</Typography>
-                                    </Box>
-                                )}
-                            </Paper>
-                        </Grid>
-                    );
-                })}
-            </Grid>
-        );
-    };
 
     // ─── Section: Module cards ─────────────────────────────────────────────
     const renderModules = () => (

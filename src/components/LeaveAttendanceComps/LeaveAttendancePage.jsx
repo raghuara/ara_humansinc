@@ -3,8 +3,8 @@ import {
     Box, Card, CardContent, Grid, Typography, IconButton, Button, Chip,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Avatar, Divider, Tabs, Tab, CircularProgress, Tooltip, Menu, MenuItem,
-    Dialog, DialogTitle, DialogContent, DialogActions, TextField, InputAdornment,
-    Stack, LinearProgress, Paper, ListItemIcon, ListItemText, Backdrop, Autocomplete,
+    Dialog, DialogContent, DialogActions, TextField, InputAdornment,
+    Stack, LinearProgress, Paper, Backdrop,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -14,15 +14,11 @@ import EventIcon from '@mui/icons-material/Event';
 import AddIcon from '@mui/icons-material/Add';
 import FingerprintIcon from '@mui/icons-material/Fingerprint';
 import EditNoteIcon from '@mui/icons-material/EditNote';
-import SyncIcon from '@mui/icons-material/Sync';
-import DevicesIcon from '@mui/icons-material/Devices';
 import FaceIcon from '@mui/icons-material/Face';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import KeyIcon from '@mui/icons-material/Key';
-import WifiTetheringIcon from '@mui/icons-material/WifiTethering';
 import SearchIcon from '@mui/icons-material/Search';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import PersonIcon from '@mui/icons-material/Person';
 import DownloadIcon from '@mui/icons-material/Download';
 import CloseIcon from '@mui/icons-material/Close';
 import SpaceDashboardOutlinedIcon from '@mui/icons-material/SpaceDashboardOutlined';
@@ -46,8 +42,9 @@ import HistoryToggleOffIcon from '@mui/icons-material/HistoryToggleOff';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlineRounded';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import axios from 'axios';
+import http from '../../Api/http';
 import { SyncStatus, TriggerManualSync, GetTeachersAttendance } from '../../Api/Api';
+import useFinancialYear from '../../hooks/useFinancialYear';
 import SnackBar from '../SnackBar';
 
 import StaffAttendanceOverviewPage from './StaffAttendanceOverviewPage';
@@ -56,7 +53,6 @@ import AttendanceReportsPage from './AttendanceReportsPage';
 import AddStaffAttendancePage from './AddStaffAttendancePage';
 
 
-const token = "123";
 
 // ─── Theme ──────────────────────────────────────────────────────────────────
 const PRIMARY = '#7C5CFC';
@@ -69,19 +65,6 @@ const SCHOOL_START_HOUR = 9;      // 9:00 AM
 const LATE_THRESHOLD_MIN = 15;    // > 9:15 → Late
 
 // ─── Utils ──────────────────────────────────────────────────────────────────
-const formatDateForApi = (dateObj) => {
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const y = dateObj.getFullYear();
-    return `${d}-${m}-${y}`;
-};
-
-const toHHmm = (isoOrDate) => {
-    if (!isoOrDate) return '';
-    const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
-
 const mapRole = (role = '') => {
     const r = role.toLowerCase();
     if (r === 'teaching') return 'Teaching Staff';
@@ -160,60 +143,7 @@ const POLL_INTERVAL_BUSY  = 4 * 1000;      // poll every 4s while a sync is runn
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity
 const IDLE_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'];
 
-// ─── Biometric data normalizer ──────────────────────────────────────────────
-/**
- * Converts raw Hikvision ACS event JSON → unified attendance records
- * (one record per employee, with first punch = check-in, last = check-out)
- */
-const normalizeBiometricData = (acsData, markedByRollNumber = '') => {
-    const events = acsData?.AcsEvent?.InfoList || [];
-    const grouped = {};
-    events.forEach(e => {
-        const id = e.employeeNoString;
-        if (!grouped[id]) grouped[id] = [];
-        grouped[id].push(e);
-    });
-
-    return Object.values(grouped).map(punches => {
-        punches.sort((a, b) => new Date(a.time) - new Date(b.time));
-        const first = punches[0];
-        const last = punches[punches.length - 1];
-        const checkIn = new Date(first.time);
-
-        const isLate =
-            checkIn.getHours() > SCHOOL_START_HOUR ||
-            (checkIn.getHours() === SCHOOL_START_HOUR && checkIn.getMinutes() > LATE_THRESHOLD_MIN);
-
-        return {
-            source: 'biometric',
-            rollNumber: first.employeeNoString,
-            employeeNoString: first.employeeNoString,
-            name: first.name,
-            date: formatDateForApi(checkIn),
-            status: isLate ? 'late' : 'present',
-            loginTime: toHHmm(first.time),
-            logoutTime: last !== first ? toHHmm(last.time) : null,
-            verifyMode: first.currentVerifyMode,
-            deviceDoor: first.doorNo,
-            deviceReader: first.cardReaderNo,
-            pictureURL: first.pictureURL,
-            punchCount: punches.length,
-            markedBy: markedByRollNumber,
-            allPunches: punches.map(p => ({
-                time: p.time, serialNo: p.serialNo, verifyMode: p.currentVerifyMode, pictureURL: p.pictureURL,
-            })),
-        };
-    });
-};
-
 // ─── Theme / Config maps ────────────────────────────────────────────────────
-const USER_TYPE_CONFIG = {
-    'Super Admin': { color: '#2563EB', bg: '#F1EEFE' },
-    'Admin':       { color: '#6246E0', bg: '#DBEAFE' },
-    'Staff':       { color: '#0891B2', bg: '#E0F7FA' },
-    'Teacher':     { color: '#16A34A', bg: '#DBEAFE' },
-};
-
 const ROLE_CONFIG = {
     'Teaching Staff':     { color: '#1D4ED8', bg: '#F3F0FE', border: '#C9BEFB' },
     'Non Teaching Staff': { color: '#0E7490', bg: '#ECFEFF', border: '#A5F3FC' },
@@ -301,16 +231,8 @@ export default function LeaveAttendancePage() {
     const pollIntervalRef = useRef(null);
     const syncTimeoutRef = useRef(null);
 
-    // Academic year selector — matches Create School Fee page behaviour.
-    // Defaults to the current academic year; options span previous two years + current.
-    const currentYear = new Date().getFullYear();
-    const currentAcademicYear = `${currentYear}-${currentYear + 1}`;
-    const academicYears = [
-        `${currentYear - 2}-${currentYear - 1}`,
-        `${currentYear - 1}-${currentYear}`,
-        `${currentYear}-${currentYear + 1}`,
-    ];
-    const [selectedAcademicYear, setSelectedAcademicYear] = useState(currentAcademicYear);
+    // The year is chosen once, in the app header — this page just follows it.
+    const financialYear = useFinancialYear();
 
     // Today's Attendance tab filters
     const [todayAttSearch, setTodayAttSearch] = useState('');
@@ -447,13 +369,13 @@ export default function LeaveAttendancePage() {
         setIsLoadingTodayList(true);
         try {
             const todayIso = new Date().toISOString().split('T')[0];
-            const res = await axios.get(GetTeachersAttendance, {
+            const res = await http.get(GetTeachersAttendance, {
                 params: {
                     fromDate: todayIso,
                     toDate: todayIso,
-                    academicYear: selectedAcademicYear || currentAcademicYear,
+                    // Legacy field name; the value is the company's financial year.
+                    academicYear: financialYear,
                 },
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (res?.data && !res.data.error) {
                 const rows = Array.isArray(res.data.data) ? res.data.data : [];
@@ -486,9 +408,7 @@ export default function LeaveAttendancePage() {
     // GET SyncStatus — pulls latest status of the biometric worker + device.
     const fetchSyncStatus = async () => {
         try {
-            const res = await axios.get(SyncStatus, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.get(SyncStatus);
             if (res?.data && !res.data.error) {
                 setSyncStatus(res.data);
                 // If we were waiting for a sync to finish and the backend says it's done,
@@ -515,9 +435,8 @@ export default function LeaveAttendancePage() {
         const todayIso = new Date().toISOString().split('T')[0];
         setIsTriggering(true);
         try {
-            const res = await axios.post(TriggerManualSync, null, {
+            const res = await http.post(TriggerManualSync, null, {
                 params: { fromDate: manualSyncDate, toDate: todayIso },
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (res?.data && res.data.error) {
                 showSnack(res.data.message || 'Failed to trigger sync', false);
@@ -563,7 +482,7 @@ export default function LeaveAttendancePage() {
             fetchTodaysAttendance();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tabValue, selectedAcademicYear]);
+    }, [tabValue, financialYear]);
 
     // Initial fetch + polling — admin/superadmin AND on the Dashboard tab only.
     // Switching to any other tab tears down the poll; switching back re-fires it.
@@ -2256,31 +2175,6 @@ export default function LeaveAttendancePage() {
                                 >
                                     Mark Attendance
                                 </Button>
-                                <Autocomplete
-                                    size="small"
-                                    options={academicYears}
-                                    sx={{ width: '170px' }}
-                                    value={selectedAcademicYear}
-                                    onChange={(e, newValue) => setSelectedAcademicYear(newValue)}
-                                    renderInput={(params) => (
-                                        <TextField
-                                            placeholder="Select Academic Year"
-                                            {...params}
-                                            variant="outlined"
-                                            sx={{
-                                                '& .MuiOutlinedInput-root': {
-                                                    borderRadius: '7px',
-                                                    fontSize: 14,
-                                                    height: 35,
-                                                },
-                                                '& .MuiOutlinedInput-input': {
-                                                    textAlign: 'center',
-                                                    fontWeight: '600',
-                                                },
-                                            }}
-                                        />
-                                    )}
-                                />
                             </Box>
                         )}
                     </Box>

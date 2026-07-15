@@ -22,11 +22,11 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import axios from 'axios';
+import http from '../../Api/http';
 import { leaveApprovalStatusCheck, updateLeaveApprovalAction } from '../../Api/Api';
+import useFinancialYear from '../../hooks/useFinancialYear';
 import SnackBar from '../SnackBar';
 
-const token = "123";
 
 // ─── Theme (matches other Leave & Attendance tabs) ─────────────────────────
 const PRIMARY = '#7C5CFC';
@@ -80,14 +80,6 @@ const getRelativeTime = (isoStr) => {
     return `${Math.floor(days / 30)}mo ago`;
 };
 
-// Academic year window (Apr–Mar cutoff)
-const getCurrentAcademicYear = () => {
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = today.getMonth() + 1;
-    return m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
-};
-
 const QUICK_REJECT_REASONS = [
     'Insufficient notice period',
     'Critical work period — please reschedule',
@@ -100,7 +92,7 @@ export default function ApprovalWorkflowPage({ isEmbedded = false }) {
     const navigate = useNavigate();
     const user = useSelector((state) => state.auth);
     const rollNumber = user?.rollNumber;
-    const academicYear = useMemo(() => getCurrentAcademicYear(), []);
+    const financialYear = useFinancialYear();
 
     // ─── State ──────────────────────────────────────────────────────────────
     const [search, setSearch] = useState('');
@@ -127,16 +119,17 @@ export default function ApprovalWorkflowPage({ isEmbedded = false }) {
     // leave is approved or rejected the API filters it out, so we drop the
     // row from local state on action to keep the UI in sync without refetch.
     const fetchLeaves = async () => {
-        if (!rollNumber) return;
+        if (!rollNumber || !financialYear) return;
         setIsFetching(true);
         try {
-            const res = await axios.get(leaveApprovalStatusCheck, {
+            // `AcademicYear` is still the field name on this legacy endpoint; the
+            // value is the company's financial year.
+            const res = await http.get(leaveApprovalStatusCheck, {
                 params: {
-                    AcademicYear: academicYear,
+                    AcademicYear: financialYear,
                     RollNumber:   rollNumber,
                     Status:       'Requested',
                 },
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (res?.data?.success) {
                 setLeaves(Array.isArray(res.data.leaves) ? res.data.leaves : []);
@@ -155,7 +148,7 @@ export default function ApprovalWorkflowPage({ isEmbedded = false }) {
     useEffect(() => {
         fetchLeaves();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rollNumber, academicYear]);
+    }, [rollNumber, financialYear]);
 
     // ─── Filter (search across name, leave type, reason, roll number) ─────
     const q = search.trim().toLowerCase();
@@ -181,15 +174,14 @@ export default function ApprovalWorkflowPage({ isEmbedded = false }) {
         setActionLoading(prev => ({ ...prev, [id]: true }));
         try {
             const params = {
-                AcademicYear: academicYear,
+                AcademicYear: financialYear,
                 leaveApplicationId: id,
                 RollNumber: rollNumber,
                 Action: action,
                 Reason: action === 'decline' ? (reason || '').trim() : '',
             };
-            const res = await axios.put(updateLeaveApprovalAction, null, {
+            const res = await http.put(updateLeaveApprovalAction, null, {
                 params,
-                headers: { Authorization: `Bearer ${token}` },
             });
             // Treat explicit { success: false } / { error: true } as a failure
             // even when the HTTP call itself succeeded.

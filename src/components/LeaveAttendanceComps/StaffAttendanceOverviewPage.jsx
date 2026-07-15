@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Box,
     Button,
@@ -6,12 +6,10 @@ import {
     CardContent,
     Grid,
     Typography,
-    IconButton,
     TextField,
     Select,
     MenuItem,
     Avatar,
-    Divider,
     Chip,
     Table,
     TableBody,
@@ -22,7 +20,6 @@ import {
     InputAdornment,
     CircularProgress,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PrintIcon from '@mui/icons-material/Print';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import SearchIcon from '@mui/icons-material/Search';
@@ -32,28 +29,19 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import CancelIcon from '@mui/icons-material/Cancel';
 import EventBusyIcon from '@mui/icons-material/EventBusy';
 import DateRangeIcon from '@mui/icons-material/DateRange';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { getStaffAttendanceOverview } from '../../Api/Api';
+import http from '../../Api/http';
+import { GetEmployeeAttendanceOverview } from '../../Api/Api';
+import useFinancialYear from '../../hooks/useFinancialYear';
+import { toApiDate } from '../../utils/apiFields';
 import SnackBar from '../SnackBar';
 
-const token = "123";
 
-const USER_TYPES = ['All User Types', 'Super Admin', 'Admin', 'Staff', 'Teacher'];
 
 const VIEW_OPTIONS = [
     { label: '7 Days',    value: '7days' },
     { label: '15 Days',   value: '15days' },
     { label: 'From - To', value: 'custom' },
 ];
-
-// Format JS Date → "DD-MM-YYYY" for API
-const formatDateForApi = (dateObj) => {
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const y = dateObj.getFullYear();
-    return `${d}-${m}-${y}`;
-};
 
 // JS Date → "YYYY-MM-DD" (the format the GetStaffAttendanceOverview API expects).
 const toIsoDate = (dateObj) => {
@@ -72,14 +60,6 @@ const datesForViewPreset = (preset) => {
     const span = preset === '15days' ? 14 : 6; // 7-day window spans 6 prior days + today
     from.setDate(today.getDate() - span);
     return { from: toIsoDate(from), to: toIsoDate(today) };
-};
-
-// Academic year window (April → March) — matches the rest of the module.
-const getCurrentAcademicYear = () => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    return m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
 };
 
 // "DD-MM-YYYY" → "DD" for header display
@@ -119,8 +99,6 @@ const LEGEND = [
     { label: 'Leave',   bgcolor: '#E3F2FD', border: '#90CAF9' },
 ];
 
-// Capitalize first letter
-const capitalize = (str = '') => str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 
 // Get initials from name
 const getInitials = (name = '') =>
@@ -129,15 +107,16 @@ const getInitials = (name = '') =>
 const today = new Date().toISOString().split('T')[0];
 
 const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
-    const navigate = useNavigate();
     // Filters
-    const [searchQuery, setSearchQuery]       = useState('');
-    const [userTypeFilter, setUserTypeFilter] = useState('All User Types');
+    const [searchQuery, setSearchQuery]             = useState('');
+    const [designationFilter, setDesignationFilter] = useState('All designations');
 
     // View range
     const [viewBy, setViewBy]     = useState('7days'); // '7days' | '15days' | 'custom'
     const [fromDate, setFromDate] = useState(today);
     const [toDate, setToDate]     = useState(today);
+
+    const financialYear = useFinancialYear();
 
     // API data
     const [overviewData, setOverviewData] = useState({
@@ -165,61 +144,71 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
     // For 7days / 15days presets we compute the date range locally; for the
     // custom range we use what the user picked in the date inputs (already
     // YYYY-MM-DD from <input type="date">).
+    // GET /EmployeeAttendance/GetEmployeeAttendanceOverview
+    //   ?financialYear=YYYY-YYYY&fromDate=DD-MM-YYYY&toDate=DD-MM-YYYY
+    // The date inputs give YYYY-MM-DD, so the range is converted on the way out.
+    // There is no user-type param any more — the API returns everyone and the
+    // designation filter below is applied client-side.
     const fetchOverview = useCallback(async () => {
         // For custom range, require both dates
         if (viewBy === 'custom' && (!fromDate || !toDate)) return;
+        if (!financialYear) return;
 
         const range = viewBy === 'custom'
             ? { from: fromDate, to: toDate }
             : datesForViewPreset(viewBy);
 
-        const params = {
-            AcademicYear: getCurrentAcademicYear(),
-            FromDate:     range.from,
-            ToDate:       range.to,
-            UserType:     userTypeFilter !== 'All User Types' ? userTypeFilter : '',
-        };
-
         setIsLoading(true);
         try {
-            const res = await axios.get(getStaffAttendanceOverview, {
-                params,
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await http.get(GetEmployeeAttendanceOverview, {
+                params: {
+                    financialYear,
+                    fromDate: toApiDate(range.from),
+                    toDate:   toApiDate(range.to),
+                },
             });
             if (res.data && !res.data.error) {
                 setOverviewData({
-                    cards:       res.data.cards       || {},
-                    dateHeaders: res.data.dateHeaders || [],
-                    details:     res.data.details     || [],
-                    staffCount:  res.data.staffCount  || 0,
-                    fromDate:    res.data.fromDate    || '',
-                    toDate:      res.data.toDate      || '',
+                    cards:       res.data.cards         || {},
+                    dateHeaders: res.data.dateHeaders   || [],
+                    details:     res.data.details       || [],
+                    staffCount:  res.data.employeeCount || 0,
+                    fromDate:    res.data.fromDate      || '',
+                    toDate:      res.data.toDate        || '',
                 });
             } else {
                 showSnack(res.data?.message || 'Failed to fetch data', false);
             }
         } catch (error) {
-            console.error('Staff attendance overview error:', error);
-            showSnack('Failed to load staff attendance overview', false);
+            console.error('Employee attendance overview error:', error);
+            showSnack(error?.response?.data?.message || 'Failed to load the attendance overview', false);
         } finally {
             setIsLoading(false);
         }
-    }, [viewBy, fromDate, toDate, userTypeFilter]);
+    }, [viewBy, fromDate, toDate, financialYear]);
 
-    // Re-fetch when viewBy or userType changes (not on every fromDate/toDate keystroke for custom)
+    // Re-fetch when the preset or the year changes (not on every keystroke in the
+    // custom range — that fires from the Apply button).
     useEffect(() => {
         if (viewBy !== 'custom') {
             fetchOverview();
         }
-    }, [viewBy, userTypeFilter]);
+    }, [viewBy, financialYear]);
 
-    // Filtered details (client-side search only)
+    // The API groups people by designation, not by the old teacher/staff/admin
+    // user types, so the filter is built from what actually came back.
+    const designations = useMemo(
+        () => ['All designations', ...Array.from(new Set(overviewData.details.map(s => s.designation).filter(Boolean))).sort()],
+        [overviewData.details]
+    );
+
     const filteredDetails = overviewData.details.filter(s => {
-        const q = searchQuery.toLowerCase();
-        return (
-            s.name.toLowerCase().includes(q) ||
-            s.rollNumber.toLowerCase().includes(q)
-        );
+        const q = searchQuery.trim().toLowerCase();
+        const matchesSearch = !q
+            || (s.name || '').toLowerCase().includes(q)
+            || String(s.employeeCode || '').toLowerCase().includes(q);
+        const matchesDesignation = designationFilter === 'All designations' || s.designation === designationFilter;
+        return matchesSearch && matchesDesignation;
     });
 
     const { cards, dateHeaders } = overviewData;
@@ -281,14 +270,14 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                     sx={{ width: '220px', bgcolor: '#fff', '& .MuiOutlinedInput-root': { borderRadius: '7px' } }}
                 />
 
-                {/* User Type */}
+                {/* Designation */}
                 <Select
-                    value={userTypeFilter}
-                    onChange={(e) => setUserTypeFilter(e.target.value)}
+                    value={designationFilter}
+                    onChange={(e) => setDesignationFilter(e.target.value)}
                     size="small"
-                    sx={{ minWidth: 150, bgcolor: '#fff', fontSize: '13px', borderRadius: '7px' }}
+                    sx={{ minWidth: 180, bgcolor: '#fff', fontSize: '13px', borderRadius: '7px' }}
                 >
-                    {USER_TYPES.map(t => (
+                    {designations.map(t => (
                         <MenuItem key={t} value={t} sx={{ fontSize: '13px' }}>{t}</MenuItem>
                     ))}
                 </Select>
@@ -475,7 +464,7 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                                     </TableHead>
                                     <TableBody>
                                         {filteredDetails.map(staff => (
-                                            <TableRow key={staff.rollNumber} sx={{ '&:hover': { bgcolor: '#FAFAFA' } }}>
+                                            <TableRow key={staff.employeeCode} sx={{ '&:hover': { bgcolor: '#FAFAFA' } }}>
                                                 <TableCell sx={{
                                                     position: 'sticky', left: 0, bgcolor: '#fff', zIndex: 1,
                                                     borderRight: '2px solid #E8E8E8',
@@ -489,7 +478,9 @@ const StaffAttendanceOverviewPage = ({ isEmbedded = false }) => {
                                                                 {staff.name}
                                                             </Typography>
                                                             <Typography sx={{ fontSize: '10px', color: '#999' }}>
-                                                                {staff.rollNumber} · {capitalize(staff.userType)}
+                                                                {staff.employeeCode}
+                                                                {staff.designation ? ` · ${staff.designation}` : ''}
+                                                                {staff.department ? ` · ${staff.department}` : ''}
                                                             </Typography>
                                                         </Box>
                                                     </Box>

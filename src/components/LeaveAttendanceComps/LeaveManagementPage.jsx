@@ -4,7 +4,6 @@ import {
     CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Avatar, TextField, InputAdornment, Menu, MenuItem, Tooltip,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PendingIcon from '@mui/icons-material/Pending';
@@ -22,16 +21,15 @@ import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import ListAltOutlinedIcon from '@mui/icons-material/ListAltOutlined';
 import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
 import HistoryToggleOffIcon from '@mui/icons-material/HistoryToggleOff';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { getLeaveApprovalDashboard, GetleaveTypes } from '../../Api/Api';
+import http from '../../Api/http';
+import { getLeaveApprovalDashboard, GetLeaveTypes } from '../../Api/Api';
+import useFinancialYear from '../../hooks/useFinancialYear';
 import SnackBar from '../SnackBar';
 import { useSelector } from 'react-redux';
 import ApplyLeavePage from './ApplyLeavePage';
 import ApprovalWorkflowPage from './ApprovalWorkflowPage';
 import MyLeaveStatusPage from './MyLeaveStatusPage';
 
-const token = "123";
 
 // ─── Theme (matches other Leave & Attendance tabs) ─────────────────────────
 const PRIMARY = '#7C5CFC';
@@ -61,14 +59,6 @@ const avatarColorFor = (name = '') => {
 
 const getInitials = (name = '') =>
     name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-
-// Academic year window matches the rest of the leave module (Apr–Mar cutoff).
-const getCurrentAcademicYear = () => {
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = today.getMonth() + 1;
-    return m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
-};
 
 // API returns "Approved" / "Pending" / "Rejected" with mixed casing — normalize for our maps.
 const normalizeLeaveStatus = (s) => {
@@ -110,7 +100,6 @@ export default function LeaveManagementPage({
     initialSubView = 'applications',  // 'applications' | 'apply' | 'approval'
     onSubViewChange,
 }) {
-    const navigate = useNavigate();
     const user = useSelector((state) => state.auth);
     const userType = user.userType;
     const isAdmin = userType === 'superadmin' || userType === 'admin';
@@ -141,9 +130,9 @@ export default function LeaveManagementPage({
 
     // SnackBar
     const [open, setOpen] = useState(false);
-    const [status, setStatus] = useState(false);
-    const [color, setColor] = useState(false);
-    const [message, setMessage] = useState('');
+    const [status] = useState(false);
+    const [color] = useState(false);
+    const [message] = useState('');
 
     // API data
     const [dashboardData, setDashboardData] = useState({
@@ -167,15 +156,16 @@ export default function LeaveManagementPage({
     // and synthesise the KPI cards (totalLeavesThisMonth + approvedPercentOfTotal)
     // that the existing UI expects.
     const rollNumber = user?.rollNumber;
-    const academicYear = React.useMemo(() => getCurrentAcademicYear(), []);
+    const financialYear = useFinancialYear();
 
     const fetchDashboard = async () => {
-        if (!rollNumber) return;
+        if (!rollNumber || !financialYear) return;
         setIsFetching(true);
         try {
-            const res = await axios.get(getLeaveApprovalDashboard, {
-                params: { RollNumber: rollNumber, AcademicYear: academicYear },
-                headers: { Authorization: `Bearer ${token}` },
+            // `AcademicYear` is still the field name on this legacy endpoint; the
+            // value is the company's financial year.
+            const res = await http.get(getLeaveApprovalDashboard, {
+                params: { RollNumber: rollNumber, AcademicYear: financialYear },
             });
             const body = res?.data;
             if (!body || body.error) {
@@ -234,11 +224,11 @@ export default function LeaveManagementPage({
     };
 
     const fetchLeaveTypes = async () => {
+        if (!financialYear) return;
         setIsFetchingLeaveTypes(true);
         try {
-            const res = await axios.get(GetleaveTypes, {
-                params: { academicYear },
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await http.get(GetLeaveTypes, {
+                params: { financialYear },
             });
             // Tolerate common envelope shapes: { data: { items: [...] } }, { data: [...] },
             // { items: [...] }, { leaveTypes: [...] }, or plain array.
@@ -261,12 +251,12 @@ export default function LeaveManagementPage({
     useEffect(() => {
         fetchLeaveTypes();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [academicYear]);
+    }, [financialYear]);
 
     useEffect(() => {
         if (rollNumber) fetchDashboard();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rollNumber, academicYear]);
+    }, [rollNumber, financialYear]);
 
     // ─── Derived data ───────────────────────────────────────────────────────
     const stats = dashboardData.cards;

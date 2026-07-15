@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Box, Typography, Stack, Grid, Chip, LinearProgress, Avatar, Button, Tooltip, IconButton } from '@mui/material';
+import { Box, Typography, Stack, Grid, Chip, Avatar, Button, Tooltip, IconButton } from '@mui/material';
 import { keyframes } from '@mui/system';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HowToRegRoundedIcon from '@mui/icons-material/HowToRegRounded';
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded';
-import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded';
 import PaymentsRoundedIcon from '@mui/icons-material/PaymentsRounded';
 import BeachAccessRoundedIcon from '@mui/icons-material/BeachAccessRounded';
 import CakeRoundedIcon from '@mui/icons-material/CakeRounded';
@@ -24,11 +23,13 @@ import PhoneIphoneRoundedIcon from '@mui/icons-material/PhoneIphoneRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
+import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded';
+import RunningWithErrorsRoundedIcon from '@mui/icons-material/RunningWithErrorsRounded';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { PieChart } from '@mui/x-charts/PieChart';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { selectEmployees } from '../redux/slices/employeesSlice';
+import { selectInterviewsToday } from '../redux/slices/recruitmentSlice';
 import Loader from '../components/Loader';
 
 const PRIMARY = '#7C5CFC';
@@ -45,6 +46,17 @@ const initials = (s = '') => s.split(' ').map((w) => w[0]).join('').slice(0, 2).
 const PALETTE = ['#7C5CFC', '#0EA5E9', '#F59E0B', '#16A34A', '#E11D48', '#6246E0', '#0891B2'];
 const colorFor = (s = '') => PALETTE[(s.charCodeAt(0) || 0) % PALETTE.length];
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+// "09:42" → "9:42 AM". Punch-in and interview times are stored 24-hour.
+const fmtClock = (t) => {
+    if (!t) return '—';
+    const [h, m] = t.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+};
+
+// 42 → "42m", 95 → "1h 35m". Reads better than a raw minute count once it's over an hour.
+const fmtLate = (mins) => (mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`);
 
 // Section card wrapper with a header row
 function Panel({ title, icon: Icon, action, onAction, color = PRIMARY, children, i = 0 }) {
@@ -70,6 +82,7 @@ export default function DashboardPage() {
     const navigate = useNavigate();
     const employees = useSelector(selectEmployees);
     const auth = useSelector((s) => s.auth);
+    const interviewsToday = useSelector(selectInterviewsToday);
     const [loading, setLoading] = useState(true);
     useEffect(() => { const t = setTimeout(() => setLoading(false), 650); return () => clearTimeout(t); }, []);
 
@@ -113,7 +126,23 @@ export default function DashboardPage() {
     const trendGross = [56.4, 58.1, 59.7, 61.2, 62.8, 64.0];
     const trendNet = [48.6, 50.0, 51.3, 52.6, 54.0, 55.0];
 
-    const pendingApprovals = 8;
+    // Who clocked in after the 09:15 grace cut-off today. Mocked alongside the
+    // rest of this dashboard's attendance figures — swap for the punch feed when
+    // the biometric endpoint lands, keeping the same shape.
+    const SHIFT_START = '09:15';
+    const lateComers = [
+        { id: 1, name: 'Gopinath S', dept: 'Sales', inTime: '09:42', shift: SHIFT_START },
+        { id: 2, name: 'Anitha M', dept: 'Design', inTime: '10:05', shift: SHIFT_START },
+        { id: 3, name: 'Sneha Iyer', dept: 'Engineering', inTime: '10:24', shift: SHIFT_START },
+    ];
+    // Minutes past the cut-off, so the list can be ranked worst-first.
+    const minsLate = (inTime, shift) => {
+        const [ih, im] = inTime.split(':').map(Number);
+        const [sh, sm] = shift.split(':').map(Number);
+        return (ih * 60 + im) - (sh * 60 + sm);
+    };
+    const lateSorted = [...lateComers].sort((a, b) => minsLate(b.inTime, b.shift) - minsLate(a.inTime, a.shift));
+
     const leaveRequests = [
         { id: 1, name: 'Sneha Iyer', type: 'Casual Leave', from: '2026-07-14', days: 2 },
         { id: 2, name: 'Vikram Nair', type: 'Sick Leave', from: '2026-07-11', days: 1 },
@@ -140,19 +169,15 @@ export default function DashboardPage() {
         { label: 'Total Employees', value: total, sub: 'Active workforce', icon: GroupsRoundedIcon, color: PRIMARY, bg: PRIMARY_LIGHT, onClick: () => navigate('/dashboard/employees') },
         { label: 'Present Today', value: att.present, sub: `${total ? Math.round((att.present / total) * 100) : 0}% attendance`, icon: HowToRegRoundedIcon, color: '#16A34A', bg: '#DCFCE7', onClick: () => navigate('/dashboard/attendance-leave?tab=overview') },
         { label: 'Absent Today', value: att.absent + att.onLeave, sub: `${att.absent} absent · ${att.onLeave} on leave`, icon: EventBusyRoundedIcon, color: '#F59E0B', bg: '#FFF7ED', onClick: () => navigate('/dashboard/attendance-leave?tab=overview') },
-        { label: 'Pending Approvals', value: pendingApprovals, sub: 'Awaiting your action', icon: PendingActionsRoundedIcon, color: '#0EA5E9', bg: '#E0F2FE', onClick: () => navigate('/dashboard/payslips') },
-    ];
-
-    const attTotal = att.present + att.absent + att.onLeave;
-    const donut = [
-        { name: 'Present', value: att.present, color: '#16A34A', grad: 'url(#att-green)' },
-        { name: 'On Leave', value: att.onLeave, color: '#F59E0B', grad: 'url(#att-amber)' },
-        { name: 'Absent', value: att.absent, color: '#E11D48', grad: 'url(#att-red)' },
-    ].filter((d) => d.value > 0);
-    const attLegend = [
-        { l: 'Present', v: att.present, c: '#16A34A', bg: '#DCFCE7' },
-        { l: 'On Leave', v: att.onLeave, c: '#F59E0B', bg: '#FFF7ED' },
-        { l: 'Absent', v: att.absent, c: '#E11D48', bg: '#FEE2E2' },
+        {
+            label: 'Late Comers Today',
+            value: lateComers.length,
+            sub: lateSorted.length ? `Latest ${fmtClock(lateSorted[0].inTime)} · after ${fmtClock(SHIFT_START)}` : 'Everyone on time',
+            icon: RunningWithErrorsRoundedIcon,
+            color: '#E11D48',
+            bg: '#FEE2E2',
+            onClick: () => navigate('/dashboard/attendance-leave?tab=overview'),
+        },
     ];
 
     const quickActions = [
@@ -243,67 +268,88 @@ export default function DashboardPage() {
                 </Grid>
             </Grid>
 
-            {/* Row: attendance donut · payroll status · quick actions */}
+            {/* Row: interviews today · late comers today · payroll status */}
             <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
+                {/* Interviews Today — live from the recruitment module, not mock data */}
                 <Grid size={{ xs: 12, md: 6, lg: 4 }}>
-                    <Panel title="Attendance Today" icon={HowToRegRoundedIcon} color="#16A34A" action="Overview" onAction={() => navigate('/dashboard/attendance-leave?tab=overview')} i={4}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2.2 }}>
-                            {/* gradient defs (referenced by the donut arcs) */}
-                            <Box component="svg" aria-hidden sx={{ position: 'absolute', width: 0, height: 0 }}>
-                                <defs>
-                                    <linearGradient id="att-green" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#34D399" /><stop offset="100%" stopColor="#059669" /></linearGradient>
-                                    <linearGradient id="att-amber" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#FBBF24" /><stop offset="100%" stopColor="#D97706" /></linearGradient>
-                                    <linearGradient id="att-red" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#FB7185" /><stop offset="100%" stopColor="#E11D48" /></linearGradient>
-                                </defs>
+                    <Panel title="Interviews Today" icon={EventAvailableRoundedIcon} color="#0EA5E9" action="Recruitment" onAction={() => navigate('/dashboard/recruitment?tab=interviews')} i={4}>
+                        {interviewsToday.length === 0 ? (
+                            <Box sx={{ textAlign: 'center', py: 5 }}>
+                                <EventAvailableRoundedIcon sx={{ fontSize: 34, color: '#CBD2DD' }} />
+                                <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#64748B', mt: 1 }}>No interviews today</Typography>
+                                <Typography sx={{ fontSize: 12, color: '#98A0AE', mt: 0.3 }}>Schedule one from Recruitment.</Typography>
                             </Box>
-                            {/* Modern donut (@mui/x-charts) */}
-                            <Box sx={{ position: 'relative', width: 190, height: 190 }}>
-                                <PieChart
-                                    series={[{
-                                        data: donut.map((d, idx) => ({ id: idx, value: d.value, label: d.name, color: d.grad })),
-                                        innerRadius: 64,
-                                        outerRadius: 90,
-                                        paddingAngle: donut.length > 1 ? 5 : 0,
-                                        cornerRadius: 10,
-                                        startAngle: 0,
-                                        endAngle: 360,
-                                        cx: 95,
-                                        cy: 95,
-                                        highlightScope: { fade: 'global', highlight: 'item' },
-                                    }]}
-                                    width={190}
-                                    height={190}
-                                    margin={{ top: 0, bottom: 0, left: 0, right: 0 }}
-                                    hideLegend
-                                    sx={{ '& .MuiPieArc-root': { filter: 'drop-shadow(0 5px 10px rgba(16,24,40,0.16))', stroke: 'none' } }}
-                                />
-                                <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                                    <Box sx={{ width: 40, height: 40, borderRadius: '50%', bgcolor: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.6 }}>
-                                        <HowToRegRoundedIcon sx={{ fontSize: 22, color: '#16A34A' }} />
-                                    </Box>
-                                    <Typography sx={{ fontSize: 20, fontWeight: 800, color: '#0F172A', lineHeight: 1 }}>{att.present}<Box component="span" sx={{ fontSize: 13, fontWeight: 600, color: '#94A3B8' }}>/{attTotal}</Box></Typography>
-                                    <Typography sx={{ fontSize: 9.5, color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, mt: 0.2 }}>On Duty</Typography>
-                                </Box>
-                            </Box>
-                            {/* Legend */}
-                            <Stack spacing={0.8} sx={{ width: '100%', maxWidth: 260 }}>
-                                {attLegend.map((row) => {
-                                    const pct = attTotal ? Math.round((row.v / attTotal) * 100) : 0;
+                        ) : (
+                            <Stack spacing={0.6}>
+                                {interviewsToday.map((iv) => {
+                                    const decided = Boolean(iv.outcome);
+                                    const toReview = iv.status === 'Conducted' && !iv.outcome;
+                                    const tone = decided
+                                        ? (iv.outcome === 'Selected' ? { c: '#16A34A', bg: '#DCFCE7' } : iv.outcome === 'Rejected' ? { c: '#E11D48', bg: '#FEE2E2' } : { c: '#B45309', bg: '#FFF7ED' })
+                                        : toReview ? { c: '#B45309', bg: '#FFF7ED' } : { c: '#64748B', bg: '#F1F5F9' };
                                     return (
-                                        <Stack key={row.l} direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', px: 1.3, py: 0.9, borderRadius: '8px', bgcolor: '#F8FAFC', border: '1px solid #EEF1F6' }}>
-                                            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                                                <Box sx={{ width: 10, height: 10, borderRadius: '3px', bgcolor: row.c }} />
-                                                <Typography sx={{ fontSize: 12.5, color: '#475569', fontWeight: 600 }}>{row.l}</Typography>
-                                            </Stack>
-                                            <Stack direction="row" spacing={0.8} sx={{ alignItems: 'center' }}>
-                                                <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#0F172A' }}>{row.v}</Typography>
-                                                <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: row.c, bgcolor: row.bg, px: 0.7, py: 0.15, borderRadius: '5px', minWidth: 30, textAlign: 'center' }}>{pct}%</Typography>
-                                            </Stack>
+                                        <Stack
+                                            key={iv.id}
+                                            direction="row"
+                                            onClick={() => navigate('/dashboard/recruitment?tab=interviews')}
+                                            sx={{ alignItems: 'center', gap: 1.2, p: 1, borderRadius: '9px', cursor: 'pointer', transition: 'background-color .15s', '&:hover': { bgcolor: '#F8FAFC' } }}
+                                        >
+                                            {/* The time is what you scan this list for, so it leads */}
+                                            <Box sx={{ minWidth: 62, textAlign: 'center', px: 0.8, py: 0.7, borderRadius: '8px', bgcolor: '#E0F2FE', flexShrink: 0 }}>
+                                                <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#0369A1', lineHeight: 1.2 }}>{fmtClock(iv.time)}</Typography>
+                                                <Typography sx={{ fontSize: 9, fontWeight: 700, color: '#0EA5E9' }}>{iv.durationMins}m</Typography>
+                                            </Box>
+                                            <Avatar sx={{ width: 34, height: 34, bgcolor: colorFor(iv.candidateName), fontSize: 12, fontWeight: 700 }}>{initials(iv.candidateName)}</Avatar>
+                                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0F172A' }} noWrap>{iv.candidateName}</Typography>
+                                                <Typography sx={{ fontSize: 10.5, color: '#94A3B8' }} noWrap>{iv.round} · {iv.vacancyTitle}</Typography>
+                                            </Box>
+                                            <Chip
+                                                label={decided ? iv.outcome : toReview ? 'To review' : iv.mode}
+                                                size="small"
+                                                sx={{ height: 19, fontSize: 9.5, fontWeight: 700, flexShrink: 0, bgcolor: tone.bg, color: tone.c }}
+                                            />
                                         </Stack>
                                     );
                                 })}
                             </Stack>
-                        </Box>
+                        )}
+                    </Panel>
+                </Grid>
+
+                {/* Late Comers Today — who, what time they punched in, and how late */}
+                <Grid size={{ xs: 12, md: 6, lg: 4 }}>
+                    <Panel title="Late Comers Today" icon={RunningWithErrorsRoundedIcon} color="#E11D48" action="Attendance" onAction={() => navigate('/dashboard/attendance-leave?tab=overview')} i={5}>
+                        {lateSorted.length === 0 ? (
+                            <Box sx={{ textAlign: 'center', py: 5 }}>
+                                <CheckCircleRoundedIcon sx={{ fontSize: 34, color: '#BBF7D0' }} />
+                                <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#64748B', mt: 1 }}>Everyone was on time</Typography>
+                                <Typography sx={{ fontSize: 12, color: '#98A0AE', mt: 0.3 }}>No punches after {fmtClock(SHIFT_START)}.</Typography>
+                            </Box>
+                        ) : (
+                            <>
+                                <Stack direction="row" spacing={0.7} sx={{ alignItems: 'center', mb: 1.2 }}>
+                                    <ScheduleRoundedIcon sx={{ fontSize: 14, color: '#94A3B8' }} />
+                                    <Typography sx={{ fontSize: 11, color: '#94A3B8' }}>Shift starts {fmtClock(SHIFT_START)} · latest first</Typography>
+                                </Stack>
+                                <Stack spacing={0.6}>
+                                    {lateSorted.map((p) => (
+                                        <Stack key={p.id} direction="row" sx={{ alignItems: 'center', gap: 1.2, p: 1, borderRadius: '9px', transition: 'background-color .15s', '&:hover': { bgcolor: '#FFF7F8' } }}>
+                                            <Avatar sx={{ width: 34, height: 34, bgcolor: `${colorFor(p.name)}22`, color: colorFor(p.name), fontSize: 12, fontWeight: 700 }}>{initials(p.name)}</Avatar>
+                                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0F172A' }} noWrap>{p.name}</Typography>
+                                                <Typography sx={{ fontSize: 10.5, color: '#94A3B8' }} noWrap>{p.dept}</Typography>
+                                            </Box>
+                                            {/* Punch-in time, then how far past the cut-off it was */}
+                                            <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+                                                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>{fmtClock(p.inTime)}</Typography>
+                                                <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#E11D48' }}>{fmtLate(minsLate(p.inTime, p.shift))} late</Typography>
+                                            </Box>
+                                        </Stack>
+                                    ))}
+                                </Stack>
+                            </>
+                        )}
                     </Panel>
                 </Grid>
 
@@ -331,11 +377,16 @@ export default function DashboardPage() {
                     </Panel>
                 </Grid>
 
-                <Grid size={{ xs: 12, lg: 4 }}>
+            </Grid>
+
+            {/* Quick actions — full width now that Interviews and Late Comers own
+                the row above. Six tiles read better across than stacked 2×3. */}
+            <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
+                <Grid size={12}>
                     <Panel title="Quick Actions" icon={PlayArrowRoundedIcon} color="#0EA5E9" i={6}>
                         <Grid container spacing={1}>
                             {quickActions.map((a) => (
-                                <Grid size={6} key={a.label}>
+                                <Grid size={{ xs: 6, sm: 4, lg: 2 }} key={a.label}>
                                     <Stack onClick={() => navigate(a.to)} spacing={0.8} sx={{ alignItems: 'flex-start', p: 1.4, borderRadius: '8px', border: '1px solid #EEF1F6', bgcolor: '#F8FAFC', cursor: 'pointer', height: '100%', transition: 'all .15s', '&:hover': { borderColor: `${a.color}55`, bgcolor: `${a.color}0D`, transform: 'translateY(-1px)' } }}>
                                         <Box sx={{ width: 32, height: 32, borderRadius: '8px', bgcolor: `${a.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                             <a.icon sx={{ fontSize: 18, color: a.color }} />

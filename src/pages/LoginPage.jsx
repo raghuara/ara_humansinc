@@ -1,15 +1,18 @@
 import React, { useState } from "react";
 import {
   Box, TextField, Button, Typography, Checkbox, FormControlLabel,
-  InputAdornment, IconButton, Link, useMediaQuery,
+  InputAdornment, IconButton, Link, useMediaQuery, Alert, CircularProgress, Collapse, Tooltip,
 } from "@mui/material";
 import {
-  Visibility, VisibilityOff, Info, EmailOutlined, LockOutlined, ArrowForward,
+  Visibility, VisibilityOff, Info, PersonOutlined, LockOutlined, ArrowForward,
 } from "@mui/icons-material";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
+import axios from "axios";
 import { loginSuccess } from "../redux/slices/authSlice";
+import { PostLogin } from "../Api/Api";
+import { apiErrorMessage } from "../Api/http";
 import brandLogo from "../images/Logo---Colour.png";
 
 /* ─── BRAND TOKENS ─── */
@@ -487,24 +490,53 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  // Demo credentials pre-filled — clicking Login signs straight in.
-  const [email, setEmail] = useState("admin@arahumansync.com");
-  const [password, setPassword] = useState("demo1234");
+  const [loginId, setLoginId] = useState("");
+  const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [remember, setRemember] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const isMobile = useMediaQuery("(max-width:900px)");
 
-  const handleSubmit = (e) => {
+  // Login is the one call that must NOT go through the authed client — there is
+  // no token yet, and a stale one would only get in the way.
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Demo auth — replace with your real Login API when ready.
-    dispatch(loginSuccess({
-      token: "demo-token",
-      email: (email || "").trim() || "admin@arahumansync.com",
-      userName: (email.split("@")[0]) || "admin",
-      role: "Payroll Admin",
-      organisation: "ARA HumanSync",
-    }));
-    navigate("/dashboard", { replace: true });
+    if (loading) return;
+
+    const id = loginId.trim();
+    if (!id || !password) {
+      setError("Enter your login ID and password.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await axios.post(
+        PostLogin,
+        { loginId: id, password },
+        { headers: { "Content-Type": "application/json" }, timeout: 20000 },
+      );
+
+      // The API answers 200 with `{ error: true, message }` on a bad login, so
+      // a successful HTTP status is not on its own a successful login.
+      const body = res.data;
+      if (!body || body.error || !body.data?.token) {
+        setError(body?.message || "Invalid login ID or password.");
+        return;
+      }
+
+      // Store the token, both expiry stamps, the user record and the module
+      // list exactly as the server sent them.
+      dispatch(loginSuccess({ ...body.data, remember }));
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      setError(apiErrorMessage(err, "Could not sign you in. Please try again."));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const stagger = { visible: { transition: { staggerChildren: 0.07, delayChildren: 0.25 } } };
@@ -571,14 +603,28 @@ export default function LoginPage() {
               </motion.div>
 
               <Box component="form" onSubmit={handleSubmit}>
-                {/* Email */}
+                {/* Server-side failures land here — wrong password, server down,
+                    no network. Collapse keeps the card from jumping. */}
+                <Collapse in={Boolean(error)}>
+                  <Alert
+                    severity="error"
+                    onClose={() => setError("")}
+                    sx={{ mb: 2, borderRadius: "12px", fontFamily: F, fontSize: ".82rem", alignItems: "center", "& .MuiAlert-message": { py: 0.3 } }}
+                  >
+                    {error}
+                  </Alert>
+                </Collapse>
+
+                {/* Login ID — the API authenticates on loginId, not an email */}
                 <motion.div variants={fadeUp} custom={3}>
-                  <TextField fullWidth label="Email Address" placeholder="email@example.com"
-                    value={email} onChange={(e) => setEmail(e.target.value)} type="email" sx={inputSx}
+                  <TextField fullWidth label="Login ID" placeholder="admin"
+                    value={loginId} onChange={(e) => setLoginId(e.target.value)}
+                    autoComplete="username" autoFocus disabled={loading}
+                    error={Boolean(error) && !loginId.trim()} sx={inputSx}
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
-                          <EmailOutlined sx={{ fontSize: 20, color: "#B8B3C5" }} />
+                          <PersonOutlined sx={{ fontSize: 20, color: "#B8B3C5" }} />
                         </InputAdornment>
                       ),
                     }}
@@ -589,6 +635,8 @@ export default function LoginPage() {
                 <motion.div variants={fadeUp} custom={4}>
                   <TextField fullWidth label="Password" placeholder="••••••••••••" value={password}
                     onChange={(e) => setPassword(e.target.value)} type={showPw ? "text" : "password"}
+                    autoComplete="current-password" disabled={loading}
+                    error={Boolean(error) && !password}
                     sx={{ ...inputSx, mb: 1.5 }}
                     InputProps={{
                       startAdornment: (
@@ -598,9 +646,30 @@ export default function LoginPage() {
                       ),
                       endAdornment: (
                         <InputAdornment position="end">
-                          <IconButton onClick={() => setShowPw(!showPw)} edge="end" sx={{ color: "#B8B3C5", "&:hover": { color: B } }}>
-                            {showPw ? <Visibility sx={{ fontSize: 20 }} /> : <VisibilityOff sx={{ fontSize: 20 }} />}
-                          </IconButton>
+                          {/* The icon shows the CURRENT state, not the action:
+                              open eye  → password is visible (type="text")
+                              shut eye  → password is masked  (type="password")
+                              It also goes violet while revealed, so it's obvious
+                              at a glance that the password is on screen. */}
+                          <Tooltip arrow title={showPw ? "Hide password" : "Show password"}>
+                            <IconButton
+                              onClick={() => setShowPw((v) => !v)}
+                              onMouseDown={(e) => e.preventDefault()}  // don't steal focus from the field
+                              edge="end"
+                              disabled={loading}
+                              aria-label={showPw ? "Hide password" : "Show password"}
+                              aria-pressed={showPw}
+                              sx={{
+                                color: showPw ? B : "#B8B3C5",
+                                transition: "color .18s",
+                                "&:hover": { color: B, bgcolor: "rgba(140,114,251,.08)" },
+                              }}
+                            >
+                              {showPw
+                                ? <Visibility sx={{ fontSize: 20 }} />
+                                : <VisibilityOff sx={{ fontSize: 20 }} />}
+                            </IconButton>
+                          </Tooltip>
                         </InputAdornment>
                       ),
                     }}
@@ -611,7 +680,7 @@ export default function LoginPage() {
                 <motion.div variants={fadeUp} custom={5}>
                   <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2.5 }}>
                     <FormControlLabel
-                      control={<Checkbox checked={remember} onChange={(e) => setRemember(e.target.checked)}
+                      control={<Checkbox checked={remember} onChange={(e) => setRemember(e.target.checked)} disabled={loading}
                         sx={{ color: "#D0CCE0", "&.Mui-checked": { color: B }, "& .MuiSvgIcon-root": { fontSize: 20 } }} />}
                       label={<Typography sx={{ fontSize: ".82rem", fontFamily: F, color: "#6B6780", fontWeight: 500 }}>Remember Me</Typography>}
                     />
@@ -626,17 +695,20 @@ export default function LoginPage() {
 
                 {/* Continue Button */}
                 <motion.div variants={fadeUp} custom={6}>
-                  <motion.div whileHover={{ scale: 1.015, y: -1 }} whileTap={{ scale: 0.985 }}>
-                    <Button fullWidth type="submit" variant="contained"
-                      endIcon={<ArrowForward sx={{ fontSize: 20 }} />}
+                  <motion.div whileHover={loading ? undefined : { scale: 1.015, y: -1 }} whileTap={loading ? undefined : { scale: 0.985 }}>
+                    <Button fullWidth type="submit" variant="contained" disabled={loading}
+                      endIcon={loading
+                        ? <CircularProgress size={18} thickness={5} sx={{ color: "#fff" }} />
+                        : <ArrowForward sx={{ fontSize: 20 }} />}
                       sx={{
                         py: 1.5, borderRadius: "12px", fontSize: ".95rem", fontWeight: 700, fontFamily: F, textTransform: "none",
                         background: `linear-gradient(135deg, ${B}, ${BD})`, letterSpacing: ".01em", color:"#fff",
                         boxShadow: `0 6px 24px rgba(140,114,251,.35)`,
                         "&:hover": { background: `linear-gradient(135deg, ${BD}, ${BDeep})`, boxShadow: `0 10px 32px rgba(140,114,251,.45)` },
+                        "&.Mui-disabled": { background: `linear-gradient(135deg, ${B}, ${BD})`, color: "#fff", opacity: .7 },
                       }}
                     >
-                      Continue
+                      {loading ? "Signing in…" : "Continue"}
                     </Button>
                   </motion.div>
                 </motion.div>

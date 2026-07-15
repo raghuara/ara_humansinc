@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Box, Typography, Button, Grid, IconButton,
-    Card, CardContent, Chip, Table, TableBody, TableCell, TableContainer,
+    Card, Chip, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, TextField, InputAdornment, Dialog,
-    DialogContent, DialogActions, Avatar, CircularProgress, Paper, Tooltip,
+    DialogContent, DialogActions, Avatar, CircularProgress, Tooltip,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DownloadIcon from '@mui/icons-material/Download';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -20,11 +19,10 @@ import PaidOutlinedIcon from '@mui/icons-material/PaidOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
-import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectWebsiteSettings } from '../../../redux/slices/websiteSettingsSlice';
 import * as XLSX from 'xlsx';
-import axios from 'axios';
+import http from '../../../Api/http';
 import SnackBar from '../../SnackBar';
 import { employeeBankDetailsDashboard, updateEmployeeBankDetailsByRollnumber } from '../../../Api/Api';
 
@@ -46,9 +44,6 @@ const getInitials = (name = '') =>
 const formatINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function BankReports() {
-    const navigate = useNavigate();
-    const token = "123";
-    const isExpanded = useSelector((state) => state.sidebar.isExpanded);
     const websiteSettings = useSelector(selectWebsiteSettings);
 
     const [isLoading, setIsLoading] = useState(false);
@@ -83,9 +78,7 @@ export default function BankReports() {
     const fetchBankDashboard = async () => {
         setIsLoading(true);
         try {
-            const res = await axios.get(employeeBankDetailsDashboard, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.get(employeeBankDetailsDashboard);
             if (!res.data.error) {
                 const d = res.data.data;
                 setStats({
@@ -161,9 +154,7 @@ export default function BankReports() {
                 ifsc: bankDetails.ifscCode,
                 branch: bankDetails.branchName,
             };
-            const res = await axios.put(updateEmployeeBankDetailsByRollnumber, body, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.put(updateEmployeeBankDetailsByRollnumber, body);
             if (!res.data.error) {
                 showSnack(isAddMode ? 'Bank details added successfully!' : 'Bank details updated successfully!', true);
                 setOpenDialog(false);

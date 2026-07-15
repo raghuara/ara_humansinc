@@ -11,10 +11,12 @@ import EmployeeDetailPage from './pages/EmployeeDetailPage';
 import RolesPage from './pages/RolesPage';
 import RoleUsersPage from './pages/RoleUsersPage';
 import RoleAccessPage from './pages/RoleAccessPage';
+import FinancialYearPage from './pages/FinancialYearPage';
 
-// Inbox & documents
+// Inbox, documents & recruitment
 import InboxPage from './pages/InboxPage';
 import DocumentsPage from './pages/DocumentsPage';
+import RecruitmentPage from './pages/RecruitmentPage';
 
 // Payroll — the monthly run
 import MarkSalaryCreditedPage from './components/LeaveAttendanceComps/PayrollComps/MarkSalaryCreditedPage';
@@ -24,6 +26,7 @@ import PayAdjustmentsPage from './pages/PayAdjustmentsPage';
 
 // Tabbed hosts — each groups several existing pages under one sidebar entry.
 import AttendanceLeavePage from './pages/AttendanceLeavePage';
+import AttendanceHistoryPage from './pages/AttendanceHistoryPage';
 import OrganisationPage from './pages/OrganisationPage';
 import PayrollSetupPage from './pages/PayrollSetupPage';
 import LeavePolicyPage from './pages/LeavePolicyPage';
@@ -81,6 +84,7 @@ export default function App() {
                     <Route path="employees" element={<EmployeesPage />} />
                     <Route path="employees/onboard" element={<OnboardEmployeePage />} />
                     <Route path="employees/:id" element={<EmployeeDetailPage />} />
+                    <Route path="recruitment" element={<RecruitmentPage />} />
                     <Route path="documents" element={<DocumentsPage />} />
 
                     {/* ── Payroll (monthly) ────────────────────────────────── */}
@@ -91,11 +95,13 @@ export default function App() {
 
                     {/* ── Attendance ───────────────────────────────────────── */}
                     <Route path="attendance-leave" element={<AttendanceLeavePage />} />
+                    <Route path="attendance-history" element={<AttendanceHistoryPage />} />
 
                     {/* ── Setup ────────────────────────────────────────────── */}
                     <Route path="organisation" element={<OrganisationPage />} />
                     <Route path="payroll-setup" element={<PayrollSetupPage />} />
                     <Route path="leave-policy" element={<LeavePolicyPage />} />
+                    <Route path="financial-year" element={<FinancialYearPage />} />
                     <Route path="roles" element={<RolesPage />} />
                     <Route path="roles/:roleId/users" element={<RoleUsersPage />} />
                     <Route path="roles/:roleId/access" element={<RoleAccessPage />} />

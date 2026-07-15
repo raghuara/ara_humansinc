@@ -27,18 +27,30 @@ import PowerSettingsNewRoundedIcon from '@mui/icons-material/PowerSettingsNewRou
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded';
 import FolderSharedRoundedIcon from '@mui/icons-material/FolderSharedRounded';
-import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
+import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded';
+import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { toggleSidebar } from '../redux/slices/sidebarSlice';
 import { logout } from '../redux/slices/authSlice';
+import { selectModules } from '../redux/slices/authSlice';
+import { canAccessRoute } from '../data/serverModules';
 import { selectUnreadCount } from '../redux/slices/inboxSlice';
 import { selectEntities, selectActiveEntity, setActiveEntity } from '../redux/slices/orgSlice';
 import { selectPendingApprovals } from '../redux/slices/documentsSlice';
+import { selectAwaitingReview } from '../redux/slices/recruitmentSlice';
 import { selectAdvanceRequests } from '../redux/slices/advancesSlice';
 import { selectOtRecords } from '../redux/slices/overtimeSlice';
+import {
+    setFinancialYearConfig, setSelectedFinancialYear, selectFinancialYearConfig,
+    selectSelectedFinancialYear, selectFinancialYearOptions,
+} from '../redux/slices/financialYearSlice';
+import http from '../Api/http';
+import { GetFinancialYearConfig } from '../Api/Api';
 import { PRIMARY, PRIMARY_LIGHT, GRADIENT } from '../theme';
 import brandLogo from '../images/Logo---Colour.png';
 
@@ -56,8 +68,12 @@ const NAV = [
     {
         type: 'section', label: 'Main', defaultOpen: true, items: [
             { label: 'Dashboard', icon: SpaceDashboardRoundedIcon, to: '/dashboard' },
-            { label: 'Inbox', icon: NotificationsRoundedIcon, to: '/dashboard/inbox', badge: 'inbox' },
+            { label: 'Inbox', icon: MailOutlineRoundedIcon, to: '/dashboard/inbox', badge: 'inbox' },
             { label: 'Employees', icon: GroupsRoundedIcon, to: '/dashboard/employees' },
+            {
+                label: 'Recruitment', icon: WorkOutlineRoundedIcon, to: '/dashboard/recruitment',
+                tabs: { interviews: 'Interviews', vacancies: 'Vacancies', candidates: 'Candidates' },
+            },
             {
                 label: 'Documents', icon: FolderSharedRoundedIcon, to: '/dashboard/documents',
                 tabs: { requests: 'Requests', approvals: 'Approvals', organisation: 'Organisation Documents', employee: 'Employee Documents' },
@@ -84,7 +100,7 @@ const NAV = [
         ],
     },
     {
-        type: 'section', label: 'Setup', defaultOpen: false, items: [
+        type: 'section', label: 'Setup', defaultOpen: true, items: [
             {
                 label: 'Organisation', icon: ApartmentRoundedIcon, to: '/dashboard/organisation',
                 tabs: { entities: 'Business Entities', departments: 'Departments', designations: 'Designations' },
@@ -152,14 +168,23 @@ export default function DashboardLayout() {
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const isExpanded = useSelector((s) => s.sidebar.isExpanded);
     const auth = useSelector((s) => s.auth);
+    const modules = useSelector(selectModules);
     const unread = useSelector(selectUnreadCount);
     const entities = useSelector(selectEntities);
     const activeEntity = useSelector(selectActiveEntity);
     const docApprovals = useSelector(selectPendingApprovals);
+    const interviewReviews = useSelector(selectAwaitingReview);
     const advanceRequests = useSelector(selectAdvanceRequests);
     const otRecords = useSelector(selectOtRecords);
     const [anchor, setAnchor] = React.useState(null);
     const [entityAnchor, setEntityAnchor] = React.useState(null);
+    const [fyAnchor, setFyAnchor] = React.useState(null);
+
+    // Financial year — the company's own reporting period. Loaded once here so
+    // every screen can read the same selected year out of the store.
+    const fyConfig = useSelector(selectFinancialYearConfig);
+    const fySelected = useSelector(selectSelectedFinancialYear);
+    const fyOptions = useSelector(selectFinancialYearOptions);
     const [mobileOpen, setMobileOpen] = React.useState(false);
     const [logoutConfirm, setLogoutConfirm] = React.useState(false);
     const [openSections, setOpenSections] = React.useState(() => {
@@ -167,6 +192,19 @@ export default function DashboardLayout() {
         NAV.forEach((n) => { if (n.type === 'section') o[n.label] = n.defaultOpen !== false; });
         return o;
     });
+
+    // A missing or failed config just leaves the header control in its "not set"
+    // state — it must never block the dashboard from rendering.
+    React.useEffect(() => {
+        let cancelled = false;
+        http.get(GetFinancialYearConfig)
+            .then(({ data: body }) => {
+                if (cancelled || body?.error) return;
+                dispatch(setFinancialYearConfig(body?.data || null));
+            })
+            .catch(() => { /* header falls back to "Set financial year" */ });
+        return () => { cancelled = true; };
+    }, [dispatch]);
 
     const expanded = isMobile ? true : isExpanded;
     const width = isExpanded ? EXPANDED : COLLAPSED;
@@ -177,9 +215,21 @@ export default function DashboardLayout() {
     // Zero-count rows are dropped rather than shown as "0".
     const crumbs = crumbsFor(location.pathname, location.search);
 
+    // Hide the rows this login has no module for, then drop any section left
+    // with nothing in it — an empty "PAYROLL" header would be worse than no
+    // header at all. With no module list from the server, nothing is hidden.
+    const visibleNav = React.useMemo(() => (
+        NAV
+            .map((n) => (n.type === 'section'
+                ? { ...n, items: n.items.filter((i) => canAccessRoute(modules, i.to)) }
+                : n))
+            .filter((n) => (n.type === 'section' ? n.items.length > 0 : canAccessRoute(modules, n.to)))
+    ), [modules]);
+
     const otPending = otRecords.filter((r) => r.status === 'pending').length;
     const todo = [
         { label: 'Documents to approve', count: docApprovals.length, icon: FactCheckRoundedIcon, color: '#0EA5E9', to: '/dashboard/documents?tab=approvals' },
+        { label: 'Interviews to review', count: interviewReviews.length, icon: WorkOutlineRoundedIcon, color: '#E11D48', to: '/dashboard/recruitment?tab=interviews' },
         { label: 'Advance requests', count: advanceRequests.length, icon: SavingsRoundedIcon, color: '#F59E0B', to: '/dashboard/pay-adjustments?tab=advances' },
         { label: 'Overtime to approve', count: otPending, icon: MoreTimeRoundedIcon, color: '#7C5CFC', to: '/dashboard/pay-adjustments?tab=overtime' },
     ].filter((t) => t.count > 0);
@@ -239,7 +289,7 @@ export default function DashboardLayout() {
             </Box>
 
             <Stack spacing={0.3} sx={{ px: 1.4, pb: 2, flexGrow: 1, overflowY: 'auto' }}>
-                {NAV.map((n) => {
+                {visibleNav.map((n) => {
                     if (n.type === 'link') return leaf(n);
 
                     // Collapsed icon-rail: no headers, just a divider + item icons.
@@ -442,6 +492,85 @@ export default function DashboardLayout() {
                         <SearchRoundedIcon />
                     </IconButton>
 
+                    {/* Financial year — which reporting period the app is working in */}
+                    <Tooltip arrow title={fyConfig ? `Financial year runs ${fyConfig.startMonthName} to ${fyConfig.endMonthName}` : 'No financial year set'}>
+                        <Stack
+                            direction="row"
+                            spacing={0.9}
+                            onClick={(e) => setFyAnchor(e.currentTarget)}
+                            sx={{
+                                alignItems: 'center', cursor: 'pointer', height: 40, px: 1.3,
+                                border: '1px solid', borderRadius: '10px',
+                                borderColor: fyAnchor ? '#C9BEFB' : '#EAECF2',
+                                bgcolor: fyAnchor ? PRIMARY_LIGHT : '#fff',
+                                transition: 'background-color .18s, border-color .18s',
+                                '&:hover': { bgcolor: '#F6F5FF', borderColor: '#C9BEFB' },
+                            }}
+                        >
+                            <CalendarMonthRoundedIcon sx={{ fontSize: 18, color: fySelected ? PRIMARY : '#98A0AE' }} />
+                            <Box sx={{ display: { xs: 'none', md: 'block' }, lineHeight: 1.2, textAlign: 'left' }}>
+                                <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#98A0AE', textTransform: 'uppercase', letterSpacing: 0.5 }}>Financial year</Typography>
+                                <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: fySelected ? '#111827' : '#98A0AE' }}>
+                                    {fySelected || 'Not set'}
+                                </Typography>
+                            </Box>
+                            <KeyboardArrowDownRoundedIcon sx={{ fontSize: 17, color: '#98A0AE', transition: 'transform .2s', transform: fyAnchor ? 'rotate(180deg)' : 'none' }} />
+                        </Stack>
+                    </Tooltip>
+
+                    <Menu
+                        anchorEl={fyAnchor}
+                        open={Boolean(fyAnchor)}
+                        onClose={() => setFyAnchor(null)}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                        slotProps={{ paper: { sx: { mt: 1.2, borderRadius: '12px', minWidth: 240, border: '1px solid #EEF0F5', boxShadow: '0 18px 44px rgba(15,23,42,0.16)' } } }}
+                        MenuListProps={{ sx: { p: 1 } }}
+                    >
+                        <Typography sx={{ fontSize: 10.5, fontWeight: 800, color: '#98A0AE', textTransform: 'uppercase', letterSpacing: 0.6, px: 1.2, py: 0.8 }}>
+                            Financial year
+                        </Typography>
+
+                        {fyOptions.length === 0 && (
+                            <Typography sx={{ fontSize: 12.5, color: '#94A3B8', px: 1.2, py: 1 }}>
+                                Not configured yet.
+                            </Typography>
+                        )}
+
+                        {fyOptions.map((y) => {
+                            const on = y === fySelected;
+                            const isCurrent = y === fyConfig?.currentFinancialYear;
+                            return (
+                                <MenuItem
+                                    key={y}
+                                    onClick={() => { dispatch(setSelectedFinancialYear(y)); setFyAnchor(null); }}
+                                    sx={{ borderRadius: '8px', py: 1, px: 1.2, gap: 1.2, '&:hover': { bgcolor: '#F4F5F9' }, bgcolor: on ? PRIMARY_LIGHT : 'transparent' }}
+                                >
+                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                        <Stack direction="row" spacing={0.8} sx={{ alignItems: 'center' }}>
+                                            <Typography sx={{ fontSize: 13.5, fontWeight: on ? 800 : 600, color: on ? PRIMARY : '#334155' }}>{y}</Typography>
+                                            {isCurrent && (
+                                                <Box sx={{ px: 0.7, py: 0.15, borderRadius: '5px', bgcolor: '#DCFCE7' }}>
+                                                    <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#16A34A', textTransform: 'uppercase', letterSpacing: 0.4 }}>Current</Typography>
+                                                </Box>
+                                            )}
+                                        </Stack>
+                                    </Box>
+                                    {on && <CheckRoundedIcon sx={{ fontSize: 17, color: PRIMARY }} />}
+                                </MenuItem>
+                            );
+                        })}
+
+                        <Divider sx={{ borderColor: '#F1F3F7', my: 0.5 }} />
+                        <MenuItem
+                            onClick={() => { setFyAnchor(null); navigate('/dashboard/financial-year'); closeMobile(); }}
+                            sx={{ borderRadius: '8px', py: 1, px: 1.2, gap: 1.5, fontSize: 13, fontWeight: 700, color: PRIMARY, '&:hover': { bgcolor: PRIMARY_LIGHT } }}
+                        >
+                            <TuneRoundedIcon sx={{ fontSize: 18 }} />
+                            Configure financial year
+                        </MenuItem>
+                    </Menu>
+
                     {/* Inbox */}
                     <Tooltip title={unread ? `${unread} unread message${unread === 1 ? '' : 's'}` : 'Inbox'} arrow>
                         <IconButton
@@ -458,7 +587,7 @@ export default function DashboardLayout() {
                                 max={99}
                                 sx={{ '& .MuiBadge-badge': { bgcolor: '#E11D48', color: '#fff', fontSize: 9.5, fontWeight: 800, minWidth: 16, height: 16, top: 1, right: 1 } }}
                             >
-                                <NotificationsRoundedIcon sx={{ fontSize: 20 }} />
+                                <MailOutlineRoundedIcon sx={{ fontSize: 20 }} />
                             </Badge>
                         </IconButton>
                     </Tooltip>

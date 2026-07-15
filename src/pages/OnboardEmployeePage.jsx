@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Box, Typography, Grid, Button, TextField, MenuItem, Stack, Chip, Avatar, IconButton,
-    Snackbar, Alert, Tooltip, LinearProgress, InputAdornment,
+    Snackbar, Alert, Tooltip, LinearProgress, InputAdornment, CircularProgress,
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
@@ -24,8 +24,11 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { addEmployee, selectEmployees, selectIdPrefix, nextEmployeeCode } from '../redux/slices/employeesSlice';
+import { addEmployee } from '../redux/slices/employeesSlice';
 import { selectDepartmentNames, selectDesignationNames } from '../redux/slices/orgSlice';
+import http, { apiErrorMessage } from '../Api/http';
+import { PostEmployee, SetEmployeeLoginPassword, GetLoginIdFormat } from '../Api/Api';
+import { toApiDate, numOrNull, txt } from '../utils/apiFields';
 
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
@@ -33,12 +36,15 @@ const PRIMARY_BORDER = '#C9BEFB';
 const card = { bgcolor: '#fff', border: '1px solid #E6EAF1', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.06)' };
 const tonalBtn = { bgcolor: PRIMARY_LIGHT, color: PRIMARY, border: `1px solid ${PRIMARY_BORDER}`, fontWeight: 700, borderRadius: '7px', boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: '#E7DFFC' } };
 const solidBtn = { bgcolor: PRIMARY, color: '#fff', fontWeight: 700, borderRadius: '7px', boxShadow: `0 2px 6px ${PRIMARY}40`, textTransform: 'none', '&:hover': { bgcolor: '#6246E0', boxShadow: `0 4px 10px ${PRIMARY}55` } };
+const savingBtn = { '&.Mui-disabled': { bgcolor: PRIMARY, color: '#fff', opacity: 0.7, boxShadow: 'none' } };
 const field = { '& .MuiOutlinedInput-root': { borderRadius: '7px', fontSize: 14, bgcolor: '#F8FAFC', '& fieldset': { borderColor: '#E5E7EB' }, '&:hover fieldset': { borderColor: '#D8DEE8' }, '&.Mui-focused fieldset': { borderColor: PRIMARY, borderWidth: 1.5 } } };
 
 const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
 const MARITAL = ['Single', 'Married', 'Divorced', 'Widowed'];
 const BLOOD = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
-const SHIFTS = ['General (9 – 6)', 'Morning', 'Evening', 'Night', 'Flexible'];
+// Sent verbatim as `shift`, so these must be the values the backend expects —
+// no "(9 – 6)" style annotations, or the API stores a shift name it can't match.
+const SHIFTS = ['General', 'Morning', 'Evening', 'Night', 'Flexible'];
 const EMP_TYPES = ['Permanent', 'Probation', 'Contract', 'Internship', 'Part-Time'];
 const DOC_LIST = [
     'Profile Photo', 'Aadhaar Card', 'PAN Card', 'Passport', 'Resume', 'Educational Certificates',
@@ -85,6 +91,70 @@ const EMPTY = {
     prevCompany: '', prevDesignation: '', prevExperience: '', prevStartDate: '', prevEndDate: '', lastDrawnSalary: '', reasonForLeaving: '',
     emergencyName: '', emergencyRelationship: '', emergencyMobile: '', emergencyAlternate: '', emergencyAddress: '',
 };
+
+// ── PostEmployee payload ─────────────────────────────────────────────────────
+// The form's field names are the UI's own; the API has its own vocabulary
+// (`dob` → `dateOfBirth`, `aadhaar` → `aadhaarNumber`, …). Everything is mapped
+// explicitly here so a rename on either side fails loudly in one place instead
+// of silently posting an empty column.
+const buildEmployeePayload = (form) => ({
+    firstName: txt(form.firstName),
+    lastName: txt(form.lastName),
+    gender: txt(form.gender),
+    dateOfBirth: toApiDate(form.dob),
+    maritalStatus: txt(form.maritalStatus),
+    bloodGroup: txt(form.bloodGroup),
+    nationality: txt(form.nationality),
+
+    personalEmail: txt(form.personalEmail),
+    personalMobile: txt(form.personalMobile),
+    alternateMobile: txt(form.alternateMobile),
+
+    employmentType: txt(form.employmentType),
+    dateOfJoining: toApiDate(form.dateOfJoining),
+    department: txt(form.department),
+    designation: txt(form.designation),
+    shift: txt(form.shift),
+    probationPeriodMonths: numOrNull(form.probationPeriod),
+    confirmationDate: toApiDate(form.confirmationDate),
+
+    addressLine1: txt(form.addressLine1),
+    addressLine2: txt(form.addressLine2),
+    city: txt(form.city),
+    state: txt(form.state),
+    country: txt(form.country),
+    postalCode: txt(form.postalCode),
+
+    aadhaarNumber: txt(form.aadhaar),
+    panNumber: txt(form.pan),
+    passportNumber: txt(form.passport),
+    drivingLicense: txt(form.drivingLicense),
+    voterId: txt(form.voterId),
+    uanNumber: txt(form.uan),
+    esiNumber: txt(form.esi),
+    pfNumber: txt(form.pf),
+
+    highestQualification: txt(form.highestQualification),
+    institution: txt(form.institution),
+    university: txt(form.university),
+    yearOfPassing: numOrNull(form.yearOfPassing),
+    percentageOrCgpa: txt(form.percentage),
+    certifications: txt(form.certifications),
+
+    prevCompanyName: txt(form.prevCompany),
+    prevDesignation: txt(form.prevDesignation),
+    prevExperienceYears: numOrNull(form.prevExperience),
+    prevStartDate: toApiDate(form.prevStartDate),
+    prevEndDate: toApiDate(form.prevEndDate),
+    lastDrawnSalary: numOrNull(form.lastDrawnSalary),
+    reasonForLeaving: txt(form.reasonForLeaving),
+
+    emergencyContactName: txt(form.emergencyName),
+    emergencyRelationship: txt(form.emergencyRelationship),
+    emergencyMobile: txt(form.emergencyMobile),
+    emergencyAlternateNumber: txt(form.emergencyAlternate),
+    emergencyAddress: txt(form.emergencyAddress),
+});
 
 // ── small building blocks ────────────────────────────────────────────────────
 const Label = ({ children, req }) => (
@@ -136,9 +206,20 @@ function SectionCard({ section, children }) {
 export default function OnboardEmployeePage() {
     const navigate = useNavigate();
     const dispatch = useDispatch();
-    const employees = useSelector(selectEmployees);
-    const idPrefix = useSelector(selectIdPrefix);
-    const empId = useMemo(() => nextEmployeeCode(employees, idPrefix), [employees, idPrefix]);
+    // The login ID is generated by the server (EMP-3, …), not here — showing a
+    // locally-guessed one would name the employee something they'll never have.
+    const [empId, setEmpId] = useState('');
+
+    useEffect(() => {
+        let cancelled = false;
+        http.get(GetLoginIdFormat)
+            .then(({ data: body }) => {
+                if (cancelled || body?.error) return;
+                setEmpId(body?.data?.nextLoginId || '');
+            })
+            .catch(() => { /* the field shows a placeholder; the server still assigns the real id */ });
+        return () => { cancelled = true; };
+    }, []);
 
     // Department / designation options come from the Organisation masters of the
     // entity currently being worked in — not a hard-coded list.
@@ -149,6 +230,7 @@ export default function OnboardEmployeePage() {
     const [photo, setPhoto] = useState(null);        // { url, name }
     const [docs, setDocs] = useState({});            // label -> { url, name }
     const [snack, setSnack] = useState({ msg: '', sev: 'warning' });
+    const [saving, setSaving] = useState(false);
     const [triedSubmit, setTriedSubmit] = useState(false);
     const [showPwd, setShowPwd] = useState(false);
     const [showPwd2, setShowPwd2] = useState(false);
@@ -172,7 +254,8 @@ export default function OnboardEmployeePage() {
         if (f) setDocs((d) => ({ ...d, [labelKey]: { url: URL.createObjectURL(f), name: f.name } }));
     };
 
-    const submit = () => {
+    const submit = async () => {
+        if (saving) return;
         setTriedSubmit(true);
         const missing = MANDATORY.filter((m) => !String(form[m.key] || '').trim());
         if (missing.length) {
@@ -187,18 +270,59 @@ export default function OnboardEmployeePage() {
             scrollTo('login');
             return;
         }
-        const { confirmPassword, ...rest } = form;
-        dispatch(addEmployee({
-            employeeId: empId,
-            ...rest,
-            loginId: empId,
-            email: form.personalEmail,
-            phone: form.personalMobile,
-            doj: form.dateOfJoining,
-            photoName: photo?.name || '',
-            documents: Object.fromEntries(Object.entries(docs).map(([k, v]) => [k, v.name])),
-        }));
-        navigate('/dashboard/employees', { state: { toast: `${form.firstName} ${form.lastName} onboarded successfully 🎉` } });
+
+        setSaving(true);
+        try {
+            const { data: body } = await http.post(PostEmployee, buildEmployeePayload(form));
+            if (body?.error) throw new Error(body.message || 'Could not onboard this employee.');
+
+            // The password is a second call — PostEmployee has no field for it.
+            // The employee already exists at this point, so a failure here must
+            // not read as "onboarding failed": the record is real, it just can't
+            // be signed into until someone sets a password from their profile.
+            const newId = body?.data?.id ?? body?.data?.employeeId;
+            let warning = '';
+            if (newId == null) {
+                warning = 'but the API returned no employee id, so no password was set';
+            } else {
+                try {
+                    const { data: pwBody } = await http.post(SetEmployeeLoginPassword, {
+                        employeeId: newId,
+                        password: form.password,
+                        confirmPassword: form.confirmPassword,
+                    });
+                    if (pwBody?.error) throw new Error(pwBody.message || 'password was rejected');
+                } catch (pwErr) {
+                    warning = `but their password wasn't set (${pwErr?.response || pwErr?.request ? apiErrorMessage(pwErr, 'unknown error') : pwErr.message})`;
+                }
+            }
+
+            // Only mirror into the store once the server has accepted the employee,
+            // so a failed POST can't leave a phantom row in the directory.
+            const { confirmPassword, ...rest } = form;
+            dispatch(addEmployee({
+                employeeId: empId,
+                ...rest,
+                loginId: empId,
+                email: form.personalEmail,
+                phone: form.personalMobile,
+                doj: form.dateOfJoining,
+                photoName: photo?.name || '',
+                documents: Object.fromEntries(Object.entries(docs).map(([k, v]) => [k, v.name])),
+            }));
+            const who = `${form.firstName} ${form.lastName}`;
+            navigate('/dashboard/employees', {
+                state: warning
+                    ? { toast: `${who} was onboarded, ${warning}. Set it from their profile.`, severity: 'warning' }
+                    : { toast: `${who} onboarded successfully 🎉`, severity: 'success' },
+            });
+        } catch (err) {
+            setSnack({
+                msg: err?.response || err?.request ? apiErrorMessage(err, 'Could not onboard this employee.') : err.message,
+                sev: 'error',
+            });
+            setSaving(false);   // left set on success — the page is navigating away
+        }
     };
 
     return (
@@ -227,8 +351,8 @@ export default function OnboardEmployeePage() {
                             </Stack>
                             <LinearProgress variant="determinate" value={pct} sx={{ height: 6, borderRadius: 5, bgcolor: '#EEF1F6', '& .MuiLinearProgress-bar': { borderRadius: 5, bgcolor: pct === 100 ? '#16A34A' : PRIMARY } }} />
                         </Box>
-                        <Button onClick={() => navigate('/dashboard/employees')} sx={{ color: '#64748B', textTransform: 'none', fontWeight: 600, borderRadius: '7px', height: 42, px: 2, border: '1px solid #E6EAF1' }}>Cancel</Button>
-                        <Button onClick={submit} startIcon={<PersonAddAlt1RoundedIcon />} sx={{ ...solidBtn, height: 42, px: 2.4 }}>Add Employee</Button>
+                        <Button disabled={saving} onClick={() => navigate('/dashboard/employees')} sx={{ color: '#64748B', textTransform: 'none', fontWeight: 600, borderRadius: '7px', height: 42, px: 2, border: '1px solid #E6EAF1' }}>Cancel</Button>
+                        <Button disabled={saving} onClick={submit} startIcon={saving ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <PersonAddAlt1RoundedIcon />} sx={{ ...solidBtn, ...savingBtn, height: 42, px: 2.4 }}>{saving ? 'Adding…' : 'Add Employee'}</Button>
                     </Stack>
                 </Stack>
             </Box>
@@ -464,8 +588,8 @@ export default function OnboardEmployeePage() {
                                     Only the <strong style={{ color: '#E11D48' }}>required</strong> fields are needed. Fill the rest now or update later.
                                 </Typography>
                                 <Stack direction="row" spacing={1}>
-                                    <Button onClick={() => navigate('/dashboard/employees')} sx={{ color: '#64748B', textTransform: 'none', fontWeight: 600, borderRadius: '7px', height: 42, px: 2, border: '1px solid #E6EAF1' }}>Cancel</Button>
-                                    <Button onClick={submit} startIcon={<PersonAddAlt1RoundedIcon />} sx={{ ...solidBtn, height: 42, px: 2.4 }}>Add Employee</Button>
+                                    <Button disabled={saving} onClick={() => navigate('/dashboard/employees')} sx={{ color: '#64748B', textTransform: 'none', fontWeight: 600, borderRadius: '7px', height: 42, px: 2, border: '1px solid #E6EAF1' }}>Cancel</Button>
+                                    <Button disabled={saving} onClick={submit} startIcon={saving ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <PersonAddAlt1RoundedIcon />} sx={{ ...solidBtn, ...savingBtn, height: 42, px: 2.4 }}>{saving ? 'Adding…' : 'Add Employee'}</Button>
                                 </Stack>
                             </Stack>
                         </Box>

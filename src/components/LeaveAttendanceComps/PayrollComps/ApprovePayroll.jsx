@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import http from '../../../Api/http';
 import {
-    Box, Typography, Button, Grid, IconButton, Divider,
-    Card, CardContent, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+    Box, Typography, Button, Grid, IconButton,
+    Card, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Avatar, Dialog, DialogContent, DialogActions, TextField, InputAdornment,
     Select, MenuItem, FormControl, CircularProgress, Chip, Tooltip,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PrintIcon from '@mui/icons-material/Print';
 import CloseIcon from '@mui/icons-material/Close';
 import BadgeIcon from '@mui/icons-material/Badge';
@@ -18,7 +17,6 @@ import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PaidOutlinedIcon from '@mui/icons-material/PaidOutlined';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
-import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectWebsiteSettings } from '../../../redux/slices/websiteSettingsSlice';
 import SnackBar from '../../SnackBar';
@@ -43,7 +41,6 @@ const getInitials = (name = '') =>
     name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
 const formatINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-const fmt2 = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Indian-format number → words (for the "Amount in words" line)
 const numToWords = (num) => {
@@ -89,9 +86,7 @@ const formatMonthParam = (monthIndex, year) =>
     `${String(monthIndex + 1).padStart(2, '0')}-${year}`;
 
 export default function ApprovePayroll() {
-    const navigate = useNavigate();
     const websiteSettings = useSelector(selectWebsiteSettings);
-    const isExpanded = useSelector((state) => state.sidebar.isExpanded);
 
     const [loading, setLoading] = useState(false);
     const [payrollData, setPayrollData] = useState([]);
@@ -124,10 +119,7 @@ export default function ApprovePayroll() {
     const fetchDashboard = async () => {
         setLoading(true);
         try {
-            const token = "123";
-            const res = await axios.get(approvePayrollPayslipsDashboard, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await http.get(approvePayrollPayslipsDashboard);
             const data = res.data.data;
             const employees = (data.employees || []).map(emp => ({
                 id: emp.id,
@@ -159,9 +151,7 @@ export default function ApprovePayroll() {
         setPayslipLoading(true);
         setPayslipData(null);
         try {
-            const token = "123";
-            const res = await axios.get(getPayrollPayslipByRollNumber, {
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await http.get(getPayrollPayslipByRollNumber, {
                 params: {
                     RollNumber: rollNumber,
                     FromMonth: formatMonthParam(fMonth, fYear),

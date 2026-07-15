@@ -19,7 +19,6 @@ import SnackBar from '../../SnackBar';
 
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
-const PRIMARY_BORDER = '#C9BEFB';
 const card = { bgcolor: '#fff', border: '1px solid #E6EAF1', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.06)' };
 const solidBtn = { bgcolor: PRIMARY, color: '#fff', fontWeight: 700, borderRadius: '7px', boxShadow: `0 2px 6px ${PRIMARY}40`, textTransform: 'none', '&:hover': { bgcolor: '#6246E0' } };
 

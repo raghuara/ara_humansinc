@@ -20,7 +20,7 @@ import {
     selectOtSlabs, selectOtRecords, selectOtGrace, otPayFor,
     addSlab, updateSlab, removeSlab, setGraceMinutes, approveOtRecord, rejectOtRecord,
 } from '../redux/slices/overtimeSlice';
-import { PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK, PRIMARY_BORDER } from '../theme';
+import { PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK } from '../theme';
 import { inr, fmtDate, initialsFromName as initials, paletteColor as colorFor } from '../utils/format';
 
 const card = { bgcolor: '#fff', border: '1px solid #E6EAF1', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.06)' };

@@ -8,8 +8,6 @@ export const PRIMARY = '#7C5CFC';
 export const PRIMARY_LIGHT = '#F1EEFE';
 export const PRIMARY_DARK = '#6246E0';
 
-export const TOKEN = '123';
-
 export const FREQUENCY_TO_API = {
     'Monthly': 'Monthly',
     'Quarterly': 'Quarterly',
