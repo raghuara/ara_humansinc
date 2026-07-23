@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-    Box, Typography, Grid, Button, Stack, Chip, IconButton, Tooltip, InputBase, LinearProgress,
+    Box, Typography, Grid, Button, Stack, Chip, IconButton, Tooltip, InputBase, LinearProgress, CircularProgress,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, InputAdornment, Snackbar, Alert,
 } from '@mui/material';
 import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded';
@@ -13,15 +13,14 @@ import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
-import { useSelector, useDispatch } from 'react-redux';
-import {
-    selectVacancies, selectCandidates, addVacancy, updateVacancy,
-    closeVacancy, reopenVacancy, deleteVacancy,
-} from '../../redux/slices/recruitmentSlice';
-import { selectDepartmentNames, selectDesignationNames, selectActiveEntity, selectActiveEntityId } from '../../redux/slices/orgSlice';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import { useSelector } from 'react-redux';
+import { selectActiveEntity, selectActiveEntityId, ALL_ENTITY_ID } from '../../redux/slices/orgSlice';
 import { PRIMARY, PRIMARY_LIGHT } from '../../theme';
-import { inr, fmtDate } from '../../utils/format';
-import { card, solidBtn, ghostBtn, field, Panel, EmptyState, ConfirmDialog } from '../uiKit';
+import { inr } from '../../utils/format';
+import { solidBtn, ghostBtn, field, Panel, EmptyState, ConfirmDialog } from '../uiKit';
+import http, { apiErrorMessage } from '../../Api/http';
+import { GetVacancies, CreateVacancy, UpdateVacancy, SetVacancyStatus, DeleteVacancy, GetDepartments, GetDesignations } from '../../Api/Api';
 
 const PRIORITIES = [
     { key: 'High', color: '#E11D48', bg: '#FEE2E2' },
@@ -37,14 +36,58 @@ const EMPTY = {
     priority: 'Medium', hiringManager: '', description: '',
 };
 
+// Map one API vacancy onto the shape this tab renders. Dates arrive
+// display-ready ("17 Jul 2026") and the applicant count is server-computed.
+const normalizeVacancy = (v) => ({
+    id: v.id,
+    title: v.roleTitle ?? '',
+    department: v.department ?? '',
+    designation: v.designation ?? '',
+    employmentType: v.employmentType ?? '',
+    priority: v.priority ?? 'Medium',
+    status: v.status ?? 'Open',
+    openings: Number(v.openings) || 0,
+    filled: Number(v.filled) || 0,
+    applicants: Number(v.applicants) || 0,
+    experience: v.experienceRange ?? '',
+    minSalary: Number(v.minSalary) || 0,
+    maxSalary: Number(v.maxSalary) || 0,
+    location: v.location ?? '',
+    hiringManager: v.hiringManager ?? '',
+    description: v.description ?? '',
+    postedOn: v.postedOn ?? '',
+    closedOn: v.closedOn ?? '',
+});
+
+// Departments and designations come back in the same envelope: entity-scoped rows
+// carrying an isActive flag. Both pickers only ever need the distinct live names
+// for the entity being worked in. A rejected call yields an empty list.
+const namesFrom = (settled, key, activeEntityId) => {
+    const body = settled.status === 'fulfilled' ? settled.value?.data : null;
+    if (!body || body.error) return [];
+    const rows = Array.isArray(body?.data?.[key]) ? body.data[key] : [];
+    const scoped = activeEntityId === ALL_ENTITY_ID
+        ? rows
+        : rows.filter((r) => String(r.entityId) === String(activeEntityId));
+    return [...new Set(
+        scoped.filter((r) => r.isActive !== false).map((r) => (r.name || '').trim()).filter(Boolean),
+    )].sort((a, b) => a.localeCompare(b));
+};
+
 export default function VacanciesTab() {
-    const dispatch = useDispatch();
-    const vacancies = useSelector(selectVacancies);
-    const candidates = useSelector(selectCandidates);
-    const departments = useSelector(selectDepartmentNames);
-    const designations = useSelector(selectDesignationNames);
     const entity = useSelector(selectActiveEntity);
-    const entityId = useSelector(selectActiveEntityId);
+    const activeEntityId = useSelector(selectActiveEntityId);
+
+    const [departments, setDepartments] = useState([]);
+    const [designations, setDesignations] = useState([]);
+    const [optionsLoading, setOptionsLoading] = useState(true);
+
+    const [vacancies, setVacancies] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [statusBusy, setStatusBusy] = useState(null);   // vacancy id whose status is changing
 
     const [q, setQ] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
@@ -52,14 +95,43 @@ export default function VacanciesTab() {
     const [form, setForm] = useState(EMPTY);
     const [tried, setTried] = useState(false);
     const [confirm, setConfirm] = useState(null);
-    const [snack, setSnack] = useState('');
+    const [snack, setSnack] = useState(null);             // { msg, sev }
 
-    // Applicants per vacancy — the number that tells you if a role is starving.
-    const applicants = useMemo(() => {
-        const map = {};
-        vacancies.forEach((v) => { map[v.id] = candidates.filter((c) => c.vacancyId === v.id).length; });
-        return map;
-    }, [vacancies, candidates]);
+    const notify = (msg, sev = 'success') => setSnack({ msg, sev });
+
+    const loadVacancies = useCallback(async () => {
+        setLoading(true);
+        try {
+            const { data: body } = await http.get(GetVacancies);
+            if (body?.error) throw new Error(body.message || 'Could not load vacancies.');
+            const list = Array.isArray(body?.data?.vacancies) ? body.data.vacancies : [];
+            setVacancies(list.map(normalizeVacancy));
+            setLoadError('');
+        } catch (err) {
+            setLoadError(apiErrorMessage(err, 'Could not load vacancies.'));
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { loadVacancies(); }, [loadVacancies]);
+
+    // Both pickers are fed by the Organisation module's own lists rather than the
+    // org slice — the slice still holds seed rows keyed to seed entity ids, so
+    // once the sidebar hydrates real entities nothing matches and the dropdowns
+    // come up empty. Fetched together; one failing doesn't blank the other.
+    const loadOrgOptions = useCallback(async () => {
+        setOptionsLoading(true);
+        const [deptRes, desigRes] = await Promise.allSettled([
+            http.get(GetDepartments),
+            http.get(GetDesignations),
+        ]);
+        setDepartments(namesFrom(deptRes, 'departments', activeEntityId));
+        setDesignations(namesFrom(desigRes, 'designations', activeEntityId));
+        setOptionsLoading(false);
+    }, [activeEntityId]);
+
+    useEffect(() => { loadOrgOptions(); }, [loadOrgOptions]);
 
     const filtered = useMemo(() => {
         const s = q.trim().toLowerCase();
@@ -70,12 +142,23 @@ export default function VacanciesTab() {
         });
     }, [vacancies, q, statusFilter]);
 
+    // Editing an older vacancy can surface a department or designation that has
+    // since been renamed or deactivated. Keep it in the list so MUI doesn't blank
+    // the select (and warn about an out-of-range value) the moment it opens.
+    const departmentOptions = useMemo(() => (
+        form.department && !departments.includes(form.department) ? [...departments, form.department] : departments
+    ), [departments, form.department]);
+    const designationOptions = useMemo(() => (
+        form.designation && !designations.includes(form.designation) ? [...designations, form.designation] : designations
+    ), [designations, form.designation]);
+
     const openCreate = () => { setForm(EMPTY); setTried(false); setDialog({ mode: 'create' }); };
     const openEdit = (v) => {
         setForm({ ...EMPTY, ...v, minSalary: String(v.minSalary || ''), maxSalary: String(v.maxSalary || '') });
         setTried(false);
         setDialog({ mode: 'edit', id: v.id });
     };
+    const closeDialog = () => { if (!saving) setDialog(null); };
     const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
     const openingsNum = Number(form.openings) || 0;
@@ -85,39 +168,86 @@ export default function VacanciesTab() {
 
     const valid = form.title.trim() && form.department && openingsNum > 0 && !salaryBad;
 
-    const submit = () => {
+    // A vacancy is always opened under exactly one company, and the API reads that
+    // from the X-Entity-Id header rather than the body. The sidebar's "All entities"
+    // mode has no single id to send, so creating is blocked until one is picked.
+    const submit = async () => {
         setTried(true);
+        if (dialog?.mode !== 'edit' && (!activeEntityId || activeEntityId === ALL_ENTITY_ID)) {
+            notify('Pick a single business entity in the sidebar before opening a vacancy.', 'warning');
+            return;
+        }
         if (!valid) {
-            setSnack(salaryBad ? 'The maximum salary cannot be below the minimum.'
+            notify(salaryBad ? 'The maximum salary cannot be below the minimum.'
                 : !form.title.trim() ? 'Give the role a title.'
                     : !form.department ? 'Pick the department this role sits in.'
-                        : 'A vacancy needs at least one opening.');
+                        : 'A vacancy needs at least one opening.', 'warning');
             return;
         }
 
         const payload = {
-            ...form,
+            roleTitle: form.title.trim(),
             openings: openingsNum,
+            department: form.department,
+            designation: form.designation || '',
+            experienceRange: form.experience,
+            employmentType: form.employmentType,
+            priority: form.priority,
             minSalary: minNum,
             maxSalary: maxNum,
-            entityId,
+            location: form.location || '',
+            hiringManager: form.hiringManager || '',
+            description: form.description || '',
         };
 
-        if (dialog.mode === 'create') {
-            dispatch(addVacancy(payload));
-            setSnack(`${form.title.trim()} opened — ${openingsNum} position${openingsNum === 1 ? '' : 's'}.`);
-        } else {
-            // `filled` is owned by the joining flow, never by this form.
-            const { filled, status, postedOn, closedOn, id, ...changes } = payload;
-            dispatch(updateVacancy({ id: dialog.id, changes }));
-            setSnack(`${form.title.trim()} updated.`);
+        setSaving(true);
+        try {
+            const { data: body } = dialog.mode === 'edit'
+                ? await http.put(UpdateVacancy, { id: dialog.id, ...payload })
+                : await http.post(CreateVacancy, payload);
+            if (body?.error) throw new Error(body.message || 'Could not save the vacancy.');
+            notify(body?.message || (dialog.mode === 'edit'
+                ? `${payload.roleTitle} updated.`
+                : `${payload.roleTitle} opened — ${openingsNum} position${openingsNum === 1 ? '' : 's'}.`));
+            setDialog(null);
+            await loadVacancies();
+        } catch (err) {
+            notify(apiErrorMessage(err, 'Could not save the vacancy.'), 'error');
+        } finally {
+            setSaving(false);
         }
-        setDialog(null);
     };
 
-    if (!entity) {
-        return <Box sx={{ p: 2 }}><Box sx={{ ...card }}><EmptyState icon={WorkOutlineRoundedIcon} title="No business entity selected" hint="Vacancies belong to a company — create an entity first." /></Box></Box>;
-    }
+    const setStatus = async (v, status) => {
+        if (statusBusy) return;
+        setStatusBusy(v.id);
+        try {
+            const { data: body } = await http.put(SetVacancyStatus, { id: v.id, status });
+            if (body?.error) throw new Error(body.message || 'Could not update the vacancy.');
+            notify(body?.message || `${v.title} ${status === 'Closed' ? 'closed' : 'reopened'}.`);
+            await loadVacancies();
+        } catch (err) {
+            notify(apiErrorMessage(err, 'Could not update the vacancy.'), 'error');
+        } finally {
+            setStatusBusy(null);
+        }
+    };
+
+    const doDelete = async () => {
+        if (!confirm || deleting) return;
+        setDeleting(true);
+        try {
+            const { data: body } = await http.delete(DeleteVacancy, { params: { id: confirm.id } });
+            if (body?.error) throw new Error(body.message || 'Could not remove the vacancy.');
+            notify(body?.message || `${confirm.title} removed.`);
+            setConfirm(null);
+            await loadVacancies();
+        } catch (err) {
+            notify(apiErrorMessage(err, 'Could not remove the vacancy.'), 'error');
+        } finally {
+            setDeleting(false);
+        }
+    };
 
     return (
         <Box sx={{ p: 2, pt: 1.5 }}>
@@ -139,11 +269,25 @@ export default function VacanciesTab() {
                             <SearchRoundedIcon sx={{ fontSize: 18, color: '#98A0AE' }} />
                             <InputBase placeholder="Search roles…" value={q} onChange={(e) => setQ(e.target.value)} sx={{ fontSize: 13, flex: 1 }} />
                         </Stack>
+                        <Tooltip arrow title="Reload">
+                            <IconButton onClick={loadVacancies} disabled={loading} sx={{ border: '1px solid #E6EAF1', borderRadius: '7px', color: '#64748B', height: 38, width: 38, '&:hover': { bgcolor: PRIMARY_LIGHT, color: PRIMARY } }}>
+                                <RefreshRoundedIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                        </Tooltip>
                         <Button startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ ...solidBtn, height: 38, px: 1.8, fontSize: 13 }}>New Vacancy</Button>
                     </Stack>
                 )}
             >
-                {filtered.length === 0 ? (
+                {loading ? (
+                    <Box sx={{ p: 5, display: 'flex', justifyContent: 'center' }}><CircularProgress size={26} /></Box>
+                ) : loadError ? (
+                    <Box sx={{ p: 3 }}>
+                        <Alert severity="error" sx={{ borderRadius: '9px' }}
+                            action={<Button size="small" onClick={loadVacancies} sx={{ textTransform: 'none', fontWeight: 700 }}>Retry</Button>}>
+                            {loadError}
+                        </Alert>
+                    </Box>
+                ) : filtered.length === 0 ? (
                     <EmptyState
                         icon={WorkOutlineRoundedIcon}
                         title={q || statusFilter !== 'all' ? 'No vacancies match these filters' : 'No vacancies yet'}
@@ -157,6 +301,7 @@ export default function VacanciesTab() {
                                 const closed = v.status === 'Closed';
                                 const remaining = Math.max(0, v.openings - v.filled);
                                 const pct = v.openings ? Math.round((v.filled / v.openings) * 100) : 0;
+                                const busy = statusBusy === v.id;
                                 return (
                                     <Grid size={{ xs: 12, md: 6, xl: 4 }} key={v.id}>
                                         <Box sx={{
@@ -198,9 +343,9 @@ export default function VacanciesTab() {
                                             <Grid container spacing={1.2}>
                                                 {[
                                                     ['Experience', v.experience],
-                                                    ['Salary', minNumOrDash(v)],
+                                                    ['Salary', salaryBand(v)],
                                                     ['Location', v.location],
-                                                    ['Applicants', String(applicants[v.id] ?? 0)],
+                                                    ['Applicants', String(v.applicants)],
                                                 ].map(([l, val]) => (
                                                     <Grid size={6} key={l}>
                                                         <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#98A0AE', textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</Typography>
@@ -222,12 +367,12 @@ export default function VacanciesTab() {
                                                     </Stack>
                                                 )}
                                                 <Typography sx={{ fontSize: 11, color: '#98A0AE', flex: 1 }} noWrap>
-                                                    {closed ? `Closed ${fmtDate(v.closedOn)}` : `Posted ${fmtDate(v.postedOn)}`}
+                                                    {closed ? (v.closedOn ? `Closed ${v.closedOn}` : 'Closed') : (v.postedOn ? `Posted ${v.postedOn}` : '')}
                                                 </Typography>
                                                 {closed ? (
-                                                    <Button onClick={() => { dispatch(reopenVacancy(v.id)); setSnack(`${v.title} reopened.`); }} startIcon={<ReplayRoundedIcon sx={{ fontSize: 15 }} />} sx={{ ...ghostBtn, height: 30, px: 1.2, fontSize: 11.5 }}>Reopen</Button>
+                                                    <Button onClick={() => setStatus(v, 'Open')} disabled={busy} startIcon={busy ? <CircularProgress size={13} /> : <ReplayRoundedIcon sx={{ fontSize: 15 }} />} sx={{ ...ghostBtn, height: 30, px: 1.2, fontSize: 11.5 }}>Reopen</Button>
                                                 ) : (
-                                                    <Button onClick={() => { dispatch(closeVacancy(v.id)); setSnack(`${v.title} closed.`); }} startIcon={<LockRoundedIcon sx={{ fontSize: 15 }} />} sx={{ ...ghostBtn, height: 30, px: 1.2, fontSize: 11.5 }}>Close</Button>
+                                                    <Button onClick={() => setStatus(v, 'Closed')} disabled={busy} startIcon={busy ? <CircularProgress size={13} /> : <LockRoundedIcon sx={{ fontSize: 15 }} />} sx={{ ...ghostBtn, height: 30, px: 1.2, fontSize: 11.5 }}>Close</Button>
                                                 )}
                                             </Stack>
                                         </Box>
@@ -240,11 +385,11 @@ export default function VacanciesTab() {
             </Panel>
 
             {/* Create / edit */}
-            <Dialog open={Boolean(dialog)} onClose={() => setDialog(null)} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: '12px' } } }}>
+            <Dialog open={Boolean(dialog)} onClose={closeDialog} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: '12px' } } }}>
                 <DialogTitle sx={{ pb: 1 }}>
                     <Typography sx={{ fontSize: 18, fontWeight: 800, color: '#0F172A' }}>{dialog?.mode === 'edit' ? 'Edit Vacancy' : 'New Vacancy'}</Typography>
                     <Typography sx={{ fontSize: 12.5, color: '#6B7280', mt: 0.2 }}>
-                        Opened under <strong>{entity.name}</strong>. Candidates and interviews hang off this role.
+                        Opened under <strong>{entity?.name || '—'}</strong>. Candidates and interviews hang off this role.
                     </Typography>
                 </DialogTitle>
                 <DialogContent sx={{ pt: '8px !important' }}>
@@ -260,15 +405,19 @@ export default function VacanciesTab() {
 
                         <Grid size={{ xs: 12, sm: 6 }}>
                             <TextField select label="Department" size="small" fullWidth value={form.department} onChange={set('department')}
-                                error={tried && !form.department} sx={field}
-                                helperText={departments.length === 0 ? 'No departments in this entity yet.' : ' '}>
-                                {departments.map((d) => <MenuItem key={d} value={d} sx={{ fontSize: 13.5 }}>{d}</MenuItem>)}
+                                error={tried && !form.department} disabled={optionsLoading} sx={field}
+                                helperText={optionsLoading ? 'Loading departments…'
+                                    : departmentOptions.length === 0 ? 'No departments in this entity yet — add one under Organisation.' : ' '}>
+                                {departmentOptions.map((d) => <MenuItem key={d} value={d} sx={{ fontSize: 13.5 }}>{d}</MenuItem>)}
                             </TextField>
                         </Grid>
                         <Grid size={{ xs: 12, sm: 6 }}>
-                            <TextField select label="Designation" size="small" fullWidth value={form.designation} onChange={set('designation')} sx={field}>
+                            <TextField select label="Designation" size="small" fullWidth value={form.designation} onChange={set('designation')}
+                                disabled={optionsLoading} sx={field}
+                                helperText={optionsLoading ? 'Loading designations…'
+                                    : designationOptions.length === 0 ? 'No designations in this entity yet — add one under Organisation.' : ' '}>
                                 <MenuItem value="" sx={{ fontSize: 13.5 }}><em>—</em></MenuItem>
-                                {designations.map((d) => <MenuItem key={d} value={d} sx={{ fontSize: 13.5 }}>{d}</MenuItem>)}
+                                {designationOptions.map((d) => <MenuItem key={d} value={d} sx={{ fontSize: 13.5 }}>{d}</MenuItem>)}
                             </TextField>
                         </Grid>
 
@@ -324,29 +473,31 @@ export default function VacanciesTab() {
                     </Grid>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2.5 }}>
-                    <Button onClick={() => setDialog(null)} sx={{ ...ghostBtn, height: 40, px: 2 }}>Cancel</Button>
-                    <Button onClick={submit} sx={{ ...solidBtn, height: 40, px: 2.4 }}>{dialog?.mode === 'edit' ? 'Save Changes' : 'Open Vacancy'}</Button>
+                    <Button onClick={closeDialog} disabled={saving} sx={{ ...ghostBtn, height: 40, px: 2 }}>Cancel</Button>
+                    <Button onClick={submit} disabled={saving} startIcon={saving ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : null} sx={{ ...solidBtn, height: 40, px: 2.4 }}>
+                        {saving ? 'Saving…' : dialog?.mode === 'edit' ? 'Save Changes' : 'Open Vacancy'}
+                    </Button>
                 </DialogActions>
             </Dialog>
 
             <ConfirmDialog
                 open={Boolean(confirm)}
-                onClose={() => setConfirm(null)}
-                onConfirm={() => { dispatch(deleteVacancy(confirm.id)); setSnack(`${confirm.title} removed.`); setConfirm(null); }}
+                onClose={() => { if (!deleting) setConfirm(null); }}
+                onConfirm={doDelete}
                 title="Remove this vacancy?"
-                body={confirm ? `${confirm.title} will be removed, along with its ${applicants[confirm.id] ?? 0} candidate(s) and every interview scheduled against it. This cannot be undone.` : ''}
+                body={confirm ? `${confirm.title} will be removed, along with its ${confirm.applicants} candidate(s) and every interview scheduled against it. This cannot be undone.` : ''}
                 confirmLabel="Remove vacancy"
             />
 
-            <Snackbar open={Boolean(snack)} autoHideDuration={3400} onClose={() => setSnack('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
-                <Alert onClose={() => setSnack('')} severity={/cannot|Give|Pick|needs/.test(snack) ? 'warning' : 'success'} variant="filled" sx={{ borderRadius: '7px' }}>{snack}</Alert>
+            <Snackbar open={Boolean(snack)} autoHideDuration={3400} onClose={() => setSnack(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+                <Alert onClose={() => setSnack(null)} severity={snack?.sev || 'success'} variant="filled" sx={{ borderRadius: '7px' }}>{snack?.msg}</Alert>
             </Snackbar>
         </Box>
     );
 }
 
-// Salary band, or an em-dash when the range was never filled in.
-function minNumOrDash(v) {
+// Salary band, or an empty string when the range was never filled in.
+function salaryBand(v) {
     if (!v.minSalary && !v.maxSalary) return '';
     if (v.minSalary && v.maxSalary) return `${inr(v.minSalary)} – ${inr(v.maxSalary)}`;
     return inr(v.minSalary || v.maxSalary);

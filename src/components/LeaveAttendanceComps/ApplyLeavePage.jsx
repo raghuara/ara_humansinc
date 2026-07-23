@@ -142,6 +142,10 @@ const StepHeader = ({ number, title, hint }) => (
 export default function ApplyLeavePage({ onSuccess, onCancel }) {
     const user = useSelector((state) => state.auth);
     const rollNumber = user?.rollNumber;
+    // The logged-in employee's code (e.g. "EMP-1"), used for the leave-balance
+    // fetch and the PostLeaveRequest body. PostLogin may expose it as
+    // `employeeCode`; older sessions carry it as `rollNumber`.
+    const employeeCode = user?.employeeCode || rollNumber || '';
 
     // Form state
     const [form, setForm] = useState({
@@ -214,18 +218,19 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
     const [balanceAsOf, setBalanceAsOf] = useState(dayjs().format('D MMM YYYY'));
     const financialYear = useFinancialYear();
 
-    // Fetch the logged-in user's leave balance for the current academic year.
-    // API returns `leaves[]` — each leave has top-level `remaining` plus a
+    // Fetch the logged-in user's leave balance for the current financial year.
+    // GET /LeavePolicy/GetEmployeeLeaveBalance?financialYear=YYYY-YYYY&employeeCode=EMP-1
+    // Response returns `leaves[]` — each leave has top-level `remaining` plus a
     // `perPeriod` block with `allocationPeriod` (Quarterly/Monthly/Yearly) and
     // a `data[]` array breaking the year into periods. We derive allocated/used
     // by summing across the periods so the UI can show both yearly totals
     // and the per-period breakdown.
     const fetchLeaveBalance = async () => {
-        if (!rollNumber) return;
+        if (!employeeCode || !financialYear) return;
         setBalanceLoading(true);
         try {
             const res = await http.get(GetEmployeeLeaveBalance, {
-                params: { financialYear, rollNumber },
+                params: { financialYear, employeeCode },
             });
             if (res?.data?.error) {
                 setBalanceTypes([]);
@@ -292,10 +297,10 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
     useEffect(() => {
         fetchLeaveBalance();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rollNumber, financialYear]);
+    }, [employeeCode, financialYear]);
 
     // ─── Leave Type Rules fetch (hydrates the state declared above) ───────
-    // GET /GetleaveTypes?academicYear=<year>
+    // GET /GetleaveTypes?financialYear=<year>
     //   blockContinuousLeave — when true, off-days INSIDE the chosen range also
     //                          count as leave days. Drives the duration math
     //                          (Fri→Mon over a Sat/Sun off calendar = 4 days).
@@ -719,8 +724,8 @@ export default function ApplyLeavePage({ onSuccess, onCancel }) {
             ? 'Loss of Pay'
             : form.leaveType;
 
-        fd.append('ForRollNumber',    String(rollNumber || ''));
-        fd.append('AcademicYear',     financialYear);   // legacy field name; value is the financial year
+        fd.append('EmployeeCode',     String(employeeCode));
+        fd.append('FinancialYear',    financialYear);
         fd.append('LeaveTypeId',      String(selectedLeaveOption?.leaveTypeId ?? ''));
         fd.append('LeaveType',        leaveTypeForApi);
         fd.append('FromDate',         formatDateForApi(startStr));   // DD-MM-YYYY

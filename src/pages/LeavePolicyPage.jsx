@@ -15,10 +15,10 @@ import LeaveMasterScreen from '../components/LeaveAttendanceComps/PayrollComps/L
 // `key` forces a remount per tab: the screen copies `initialTab` into state on
 // mount, so without it the content would not follow the tab you clicked.
 const TABS = [
-    { key: 'setup', label: 'Policy Setup', icon: RuleRoundedIcon, render: () => <LeaveMasterScreen key="lp-setup" initialTab={0} hideTabBar /> },
-    { key: 'types', label: 'Leave Types', icon: CategoryRoundedIcon, render: () => <LeaveMasterScreen key="lp-types" initialTab={1} hideTabBar /> },
-    { key: 'calendar', label: 'Working Calendar', icon: CalendarMonthRoundedIcon, render: () => <LeaveMasterScreen key="lp-calendar" initialTab={2} hideTabBar /> },
-    { key: 'shifts', label: 'Assign Shifts', icon: ScheduleRoundedIcon, render: () => <LeaveMasterScreen key="lp-shifts" initialTab={3} hideTabBar /> },
+    { key: 'setup', label: 'Policy Setup', icon: RuleRoundedIcon, module: 'policy-setup', render: () => <LeaveMasterScreen key="lp-setup" initialTab={0} hideTabBar /> },
+    { key: 'types', label: 'Leave Types', icon: CategoryRoundedIcon, module: 'leave-types', render: () => <LeaveMasterScreen key="lp-types" initialTab={1} hideTabBar /> },
+    { key: 'calendar', label: 'Working Calendar', icon: CalendarMonthRoundedIcon, module: 'working-calendar', render: () => <LeaveMasterScreen key="lp-calendar" initialTab={2} hideTabBar /> },
+    { key: 'shifts', label: 'Assign Shifts', icon: ScheduleRoundedIcon, module: 'assign-shifts', render: () => <LeaveMasterScreen key="lp-shifts" initialTab={3} hideTabBar /> },
 ];
 
 export default function LeavePolicyPage() {

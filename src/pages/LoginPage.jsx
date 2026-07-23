@@ -14,6 +14,7 @@ import { loginSuccess } from "../redux/slices/authSlice";
 import { PostLogin } from "../Api/Api";
 import { apiErrorMessage } from "../Api/http";
 import brandLogo from "../images/Logo---Colour.png";
+import loginDashboard from "../images/logindashboard.png";
 
 /* ─── BRAND TOKENS ─── */
 const B = "#8C72FB";
@@ -318,79 +319,21 @@ const WorkspaceScene = () => {
           <rect x="264" y="25" width="442" height="250" rx="7" fill="white" />
           <circle cx="485" cy="20" r="2.5" fill="#4A4A55" />
 
-          {/* sidebar */}
-          <rect x="264" y="25" width="85" height="250" rx="7" fill="#FAFAFF" />
-          <line x1="349" y1="32" x2="349" y2="268" stroke="#F0EEF8" strokeWidth=".5" />
-
-          {/* sidebar logo */}
-          <circle cx="288" cy="44" r="9" fill={B} />
-          <text x="284" y="48" fill="white" fontSize="8" fontWeight="800" fontFamily={tf}>A</text>
-          <text x="302" y="47" fill={B} fontSize="6.2" fontWeight="700" fontFamily={tf}>ARA HumanSync</text>
-
-          {/* sidebar nav */}
-          {[{l:"Overview",y:72,a:true},{l:"Employees",y:94},{l:"Payroll",y:116},{l:"Reports",y:138},{l:"Settings",y:160}].map((n,i) => (
-            <g key={`n${i}`}>
-              {n.a && <rect x="269" y={n.y-8} width="74" height="18" rx="5" fill="rgba(140,114,251,.08)" />}
-              <circle cx="280" cy={n.y} r="4.5" fill={n.a ? B : "#D0CCE0"} />
-              <text x="290" y={n.y+3.5} fill={n.a ? B : "#9A94A8"} fontSize="6" fontWeight={n.a ? "700" : "500"} fontFamily={tf}>{n.l}</text>
-            </g>
-          ))}
-
-          {/* admin */}
-          <circle cx="660" cy="42" r="10" fill={B} />
-          <text x="656" y="46" fill="white" fontSize="7" fontWeight="700" fontFamily={tf}>A</text>
-          <text x="675" y="39" fill="#1A1A2E" fontSize="5.5" fontWeight="600" fontFamily={tf}>Admin</text>
-          <text x="675" y="47" fill="#9A94A8" fontSize="4.5" fontFamily={tf}>Administrator</text>
-          <text x="635" y="45" fill="#9A94A8" fontSize="8">🔔</text>
-
-          {/* Dashboard */}
-          <text x="362" y="54" fill="#1A1A2E" fontSize="14" fontWeight="800" fontFamily={tf}>Dashboard</text>
-          <rect x="648" y="50" width="52" height="15" rx="5" fill="white" stroke="#E8E6F0" strokeWidth=".5" />
-          <text x="654" y="60.5" fill="#6B6780" fontSize="5.2" fontFamily={tf}>This Month ▾</text>
-
-          {/* ── STAT CARDS ── */}
-          {[
-            {l:"Total Employees",v:"120",x:360,w:70},
-            {l:"Total Payroll",v:"$48,750",x:438,w:82},
-            {l:"Paid",v:"98%",x:528,w:60},
-            {l:"Pending",v:"2",x:596,w:55},
-          ].map((s,i) => (
-            <g key={`st${i}`}>
-              <rect x={s.x} y="72" width={s.w} height="45" rx="6" fill="white" stroke="#F0EEF8" strokeWidth=".5" filter="url(#cs2)" />
-              <text x={s.x+8} y="86" fill="#9A94A8" fontSize="4.8" fontFamily={tf}>{s.l}</text>
-              <text x={s.x+8} y="105" fill="#1A1A2E" fontSize="12" fontWeight="800" fontFamily={tf}>{s.v}</text>
-              <circle cx={s.x+s.w-14} cy="95" r="9" fill="rgba(140,114,251,.07)" />
-              <text x={s.x+s.w-18} y="99" fill={B} fontSize="7" fontFamily={tf}>{["👤","$","✓","⏱"][i]}</text>
-            </g>
-          ))}
-
-          {/* ── PAYROLL CHART ── */}
-          <rect x="360" y="126" width="342" height="142" rx="7" fill="white" stroke="#F0EEF8" strokeWidth=".5" />
-          <text x="372" y="144" fill="#1A1A2E" fontSize="8.5" fontWeight="700" fontFamily={tf}>Payroll Overview</text>
-
-          <rect x="618" y="133" width="52" height="15" rx="5" fill={B} />
-          <text x="625" y="143.5" fill="white" fontSize="6.5" fontWeight="700" fontFamily={tf}>$48,750</text>
-
-          {/* Y axis */}
-          {["60K","40K","20K","0"].map((t,i) => <text key={`ya${i}`} x="365" y={162+i*24} fill="#C5C1D0" fontSize="4.2" fontFamily={tf}>{t}</text>)}
-          {[162,186,210,234].map((y,i) => <line key={`gl${i}`} x1="385" y1={y} x2="694" y2={y} stroke="#F4F3F8" strokeWidth=".4" />)}
-
-          {/* bars — 7 months, paired */}
-          {[
-            {h1:40,h2:30,m:"Jan"},{h1:50,h2:38,m:"Feb"},{h1:62,h2:48,m:"Mar"},
-            {h1:45,h2:35,m:"Apr"},{h1:68,h2:56,m:"May"},{h1:58,h2:48,m:"Jun"},
-            {h1:72,h2:60,m:"Jul"},
-          ].map((b,i) => (
-            <g key={`br${i}`}>
-              <rect x={396+i*42} y={240-b.h1} width={13} height={b.h1} rx={3} fill="url(#bg2)" />
-              <rect x={411+i*42} y={240-b.h2} width={13} height={b.h2} rx={3} fill="#C8BEF8" />
-              <text x={406+i*42} y="252" fill="#B8B3C5" fontSize="4.5" textAnchor="middle" fontFamily={tf}>{b.m}</text>
-            </g>
-          ))}
-
-          {/* trend line */}
-          <path d="M 402 212 C 420 198, 444 205, 462 188 C 480 172, 504 178, 522 165 C 540 152, 558 158, 576 148 C 594 138, 612 145, 630 132 C 648 122, 666 128, 690 118"
-                stroke={B} strokeWidth="1" strokeDasharray="4 2" fill="none" opacity=".35" />
+          {/* ── DASHBOARD SCREENSHOT ──
+              A saved capture of the real app, clipped to the screen's rounded
+              corners. `slice` fills the screen edge-to-edge (no letterbox); the
+              image is wider than the 442×250 slot (2.11 vs 1.77), so it's pinned
+              left (xMin) — that crops only the far-right edge and never the
+              sidebar, which is the most recognisable part. */}
+          <clipPath id="laptopScreenClip">
+            <rect x="264" y="25" width="442" height="250" rx="7" />
+          </clipPath>
+          <image
+            href={loginDashboard}
+            x="264" y="25" width="442" height="250"
+            preserveAspectRatio="xMinYMid slice"
+            clipPath="url(#laptopScreenClip)"
+          />
 
           {/* ── PLANT ── */}
           <g transform="translate(762, 248)">
@@ -490,7 +433,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  const [loginId, setLoginId] = useState("");
+  const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [remember, setRemember] = useState(true);
@@ -504,9 +447,9 @@ export default function LoginPage() {
     e.preventDefault();
     if (loading) return;
 
-    const id = loginId.trim();
+    const id = userName.trim();
     if (!id || !password) {
-      setError("Enter your login ID and password.");
+      setError("Enter your email and password.");
       return;
     }
 
@@ -516,7 +459,7 @@ export default function LoginPage() {
     try {
       const res = await axios.post(
         PostLogin,
-        { loginId: id, password },
+        { userName: id, password },
         { headers: { "Content-Type": "application/json" }, timeout: 20000 },
       );
 
@@ -524,7 +467,7 @@ export default function LoginPage() {
       // a successful HTTP status is not on its own a successful login.
       const body = res.data;
       if (!body || body.error || !body.data?.token) {
-        setError(body?.message || "Invalid login ID or password.");
+        setError(body?.message || "Invalid email or password.");
         return;
       }
 
@@ -596,6 +539,7 @@ export default function LoginPage() {
                   Welcome Back!
                 </Typography>
               </motion.div>
+              
               <motion.div variants={fadeUp} custom={2}>
                 <Typography sx={{ textAlign: "center", fontSize: ".86rem", fontFamily: F, color: "#8E8E9A", mb: 3 }}>
                   Sign in by entering the information below
@@ -615,18 +559,20 @@ export default function LoginPage() {
                   </Alert>
                 </Collapse>
 
-                {/* Login ID — the API authenticates on loginId, not an email */}
+                {/* Email — the API authenticates on `userName` (the sign-in email) */}
                 <motion.div variants={fadeUp} custom={3}>
-                  <TextField fullWidth label="Login ID" placeholder="admin"
-                    value={loginId} onChange={(e) => setLoginId(e.target.value)}
+                  <TextField fullWidth label="Email" placeholder="you@company.com"
+                    value={userName} onChange={(e) => setUserName(e.target.value)}
                     autoComplete="username" autoFocus disabled={loading}
-                    error={Boolean(error) && !loginId.trim()} sx={inputSx}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <PersonOutlined sx={{ fontSize: 20, color: "#B8B3C5" }} />
-                        </InputAdornment>
-                      ),
+                    error={Boolean(error) && !userName.trim()} sx={inputSx}
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <PersonOutlined sx={{ fontSize: 20, color: "#B8B3C5" }} />
+                          </InputAdornment>
+                        ),
+                      },
                     }}
                   />
                 </motion.div>
@@ -638,40 +584,42 @@ export default function LoginPage() {
                     autoComplete="current-password" disabled={loading}
                     error={Boolean(error) && !password}
                     sx={{ ...inputSx, mb: 1.5 }}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <LockOutlined sx={{ fontSize: 20, color: "#B8B3C5" }} />
-                        </InputAdornment>
-                      ),
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          {/* The icon shows the CURRENT state, not the action:
-                              open eye  → password is visible (type="text")
-                              shut eye  → password is masked  (type="password")
-                              It also goes violet while revealed, so it's obvious
-                              at a glance that the password is on screen. */}
-                          <Tooltip arrow title={showPw ? "Hide password" : "Show password"}>
-                            <IconButton
-                              onClick={() => setShowPw((v) => !v)}
-                              onMouseDown={(e) => e.preventDefault()}  // don't steal focus from the field
-                              edge="end"
-                              disabled={loading}
-                              aria-label={showPw ? "Hide password" : "Show password"}
-                              aria-pressed={showPw}
-                              sx={{
-                                color: showPw ? B : "#B8B3C5",
-                                transition: "color .18s",
-                                "&:hover": { color: B, bgcolor: "rgba(140,114,251,.08)" },
-                              }}
-                            >
-                              {showPw
-                                ? <Visibility sx={{ fontSize: 20 }} />
-                                : <VisibilityOff sx={{ fontSize: 20 }} />}
-                            </IconButton>
-                          </Tooltip>
-                        </InputAdornment>
-                      ),
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <LockOutlined sx={{ fontSize: 20, color: "#B8B3C5" }} />
+                          </InputAdornment>
+                        ),
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            {/* The icon shows the CURRENT state, not the action:
+                                open eye  → password is visible (type="text")
+                                shut eye  → password is masked  (type="password")
+                                It also goes violet while revealed, so it's obvious
+                                at a glance that the password is on screen. */}
+                            <Tooltip arrow title={showPw ? "Hide password" : "Show password"}>
+                              <IconButton
+                                onClick={() => setShowPw((v) => !v)}
+                                onMouseDown={(e) => e.preventDefault()}  // don't steal focus from the field
+                                edge="end"
+                                disabled={loading}
+                                aria-label={showPw ? "Hide password" : "Show password"}
+                                aria-pressed={showPw}
+                                sx={{
+                                  color: showPw ? B : "#B8B3C5",
+                                  transition: "color .18s",
+                                  "&:hover": { color: B, bgcolor: "rgba(140,114,251,.08)" },
+                                }}
+                              >
+                                {showPw
+                                  ? <Visibility sx={{ fontSize: 20 }} />
+                                  : <VisibilityOff sx={{ fontSize: 20 }} />}
+                              </IconButton>
+                            </Tooltip>
+                          </InputAdornment>
+                        ),
+                      },
                     }}
                   />
                 </motion.div>

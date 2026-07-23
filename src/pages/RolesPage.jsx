@@ -19,8 +19,10 @@ import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { syncRolesFromApi } from '../redux/slices/rolesSlice';
+import { selectUserTypeId } from '../redux/slices/authSlice';
+import { canAssignRole } from '../data/roleAccess';
 import http, { apiErrorMessage } from '../Api/http';
 import { GetUserTypes, PostUserType, UpdateUserType, DeleteUserType } from '../Api/Api';
 
@@ -42,6 +44,8 @@ const EMPTY_FORM = { name: '', description: '', accentColour: PRIMARY };
 export default function RolesPage() {
     const navigate = useNavigate();
     const dispatch = useDispatch();
+    // Master Admin membership is only editable by another Master Admin.
+    const myUserTypeId = useSelector(selectUserTypeId);
 
     // Server state. `summary` and `totalModules` come straight from the API —
     // the KPI row is not recomputed locally, so it can't drift from the backend.
@@ -362,10 +366,12 @@ export default function RolesPage() {
                                     <Button
                                         fullWidth
                                         onClick={() => navigate(`/dashboard/roles/${r.id}/users`)}
-                                        startIcon={<PeopleAltRoundedIcon sx={{ fontSize: 17 }} />}
+                                        startIcon={canAssignRole(myUserTypeId, r.id)
+                                            ? <PeopleAltRoundedIcon sx={{ fontSize: 17 }} />
+                                            : <LockRoundedIcon sx={{ fontSize: 15 }} />}
                                         sx={{ textTransform: 'none', fontSize: 12.5, fontWeight: 700, color: '#334155', bgcolor: '#F1F5F9', borderRadius: '7px', height: 38, '&:hover': { bgcolor: '#E2E8F0' } }}
                                     >
-                                        Users
+                                        {canAssignRole(myUserTypeId, r.id) ? 'Users' : 'View Users'}
                                     </Button>
                                     {r.isSystem ? (
                                         <Tooltip arrow title="Predefined role — its access is locked and can't be edited">

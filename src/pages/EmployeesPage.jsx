@@ -1,25 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Box, Typography, Grid, Button, Avatar, Chip, Stack, InputAdornment, TextField,
-    Snackbar, Alert, Tooltip, Skeleton, IconButton, CircularProgress,
+    Snackbar, Alert, Tooltip, Skeleton, IconButton,
 } from '@mui/material';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HowToRegRoundedIcon from '@mui/icons-material/HowToRegRounded';
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded';
 import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
-import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { sanitizePrefix } from '../redux/slices/employeesSlice';
 import http, { apiErrorMessage } from '../Api/http';
-import { GetEmployees, GetLoginIdFormat, UpdateLoginIdFormat } from '../Api/Api';
+import { GetEmployees } from '../Api/Api';
 import { fmtApiDate } from '../utils/apiFields';
 
 const PRIMARY = '#7C5CFC';
@@ -51,63 +48,9 @@ export default function EmployeesPage() {
     const [loadError, setLoadError] = useState('');
     const [snack, setSnack] = useState({ msg: '', severity: 'success' });
 
-    // Login ID format. The server owns both halves — the prefix and the running
-    // number — so `nextLoginId` is read from it rather than guessed from the rows
-    // on this page (which are only one page of the directory anyway).
-    const [savedPrefix, setSavedPrefix] = useState('');
-    const [prefix, setPrefix] = useState('');
-    const [nextId, setNextId] = useState('');
-    const [fmtLoading, setFmtLoading] = useState(true);
-    const [fmtSaving, setFmtSaving] = useState(false);
-
-    const notify = (msg, severity = 'success') => setSnack({ msg, severity });
-
-    const loadFormat = useCallback(async () => {
-        setFmtLoading(true);
-        try {
-            const { data: body } = await http.get(GetLoginIdFormat);
-            if (body?.error) throw new Error(body.message || 'Could not load the login ID format.');
-            const d = body?.data || {};
-            setSavedPrefix(d.prefix || '');
-            setPrefix(d.prefix || '');
-            setNextId(d.nextLoginId || '');
-        } catch {
-            // Non-fatal: the directory is still usable without this card.
-            setNextId('');
-        } finally {
-            setFmtLoading(false);
-        }
-    }, []);
-
-    useEffect(() => { loadFormat(); }, [loadFormat]);
-
-    const saveFormat = async () => {
-        const next = sanitizePrefix(prefix);
-        if (!next) { notify('Enter the starting letters for the login ID.', 'warning'); return; }
-        setFmtSaving(true);
-        try {
-            const { data: body } = await http.put(UpdateLoginIdFormat, { prefix: next });
-            if (body?.error) throw new Error(body.message || 'Could not update the login ID format.');
-            // The response carries the recomputed nextLoginId; fall back to a
-            // re-read if it doesn't, rather than showing a stale preview.
-            const d = body?.data;
-            if (d?.prefix) {
-                setSavedPrefix(d.prefix);
-                setPrefix(d.prefix);
-                setNextId(d.nextLoginId || '');
-            } else {
-                await loadFormat();
-            }
-            notify('Login ID format updated');
-        } catch (err) {
-            notify(err?.response || err?.request ? apiErrorMessage(err, 'Could not update the login ID format.') : err.message, 'error');
-        } finally {
-            setFmtSaving(false);
-        }
-    };
-
-    const prefixDirty = sanitizePrefix(prefix) !== savedPrefix;
-
+    // The login ID format moved to Settings → Employee IDs. It's a one-time
+    // setup decision, not something you change while working the directory.
+    // The snackbar stays: onboarding redirects here with a toast in route state.
     useEffect(() => {
         if (location.state?.toast) {
             setSnack({ msg: location.state.toast, severity: location.state.severity || 'success' });
@@ -194,55 +137,6 @@ export default function EmployeesPage() {
                     </Grid>
                 ))}
             </Grid>
-
-            {/* Login ID format */}
-            <Box sx={{ ...card, p: 2.5, mb: 1.5 }}>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: { xs: 'flex-start', md: 'center' }, justifyContent: 'space-between' }}>
-                    <Stack direction="row" spacing={1.4} sx={{ alignItems: 'center' }}>
-                        <Box sx={{ width: 40, height: 40, borderRadius: '9px', bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY_BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <BadgeRoundedIcon sx={{ color: PRIMARY, fontSize: 20 }} />
-                        </Box>
-                        <Box>
-                            <Typography sx={{ fontSize: 14.5, fontWeight: 800, color: '#0F172A' }}>Login ID Format</Typography>
-                            <Typography sx={{ fontSize: 12, color: '#6B7280', mt: 0.2 }}>
-                                Set the starting letters — numbers are generated automatically (1, 2, 3…) for each new employee.
-                            </Typography>
-                        </Box>
-                    </Stack>
-                    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-                        <Box>
-                            <TextField
-                                value={prefix}
-                                disabled={fmtLoading || fmtSaving}
-                                onChange={(e) => setPrefix(sanitizePrefix(e.target.value))}
-                                onKeyDown={(e) => { if (e.key === 'Enter' && prefixDirty) saveFormat(); }}
-                                size="small"
-                                placeholder="EMP"
-                                inputProps={{ maxLength: 5, style: { textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 } }}
-                                sx={{ width: 150, '& .MuiOutlinedInput-root': { borderRadius: '7px', bgcolor: '#fff', fontSize: 14, height: 42 } }}
-                                InputProps={{ startAdornment: <InputAdornment position="start"><BadgeRoundedIcon sx={{ fontSize: 17, color: '#9CA3AF' }} /></InputAdornment> }}
-                            />
-                            <Typography sx={{ fontSize: 10.5, color: '#98A0AE', mt: 0.4, ml: 0.3 }}>Starting letters · max 5</Typography>
-                        </Box>
-
-                        <Button
-                            onClick={saveFormat}
-                            disabled={fmtLoading || fmtSaving || !prefixDirty}
-                            startIcon={fmtSaving ? <CircularProgress size={15} sx={{ color: 'inherit' }} /> : <SaveRoundedIcon sx={{ fontSize: 17 }} />}
-                            sx={{ ...tonalBtn, height: 42, px: 2, mb: 2.2, '&.Mui-disabled': { bgcolor: '#F1F5F9', color: '#94A3B8', borderColor: '#E2E8F0' } }}
-                        >
-                            {fmtSaving ? 'Saving…' : 'Save'}
-                        </Button>
-
-                        <Box sx={{ px: 2, py: 1, borderRadius: '7px', bgcolor: '#F7F6FD', border: `1px dashed ${PRIMARY_BORDER}`, textAlign: 'center', mb: 2.2 }}>
-                            <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#6E6B99', textTransform: 'uppercase', letterSpacing: 0.6 }}>Next Login ID</Typography>
-                            {fmtLoading
-                                ? <Skeleton variant="text" width={80} height={24} sx={{ mx: 'auto' }} />
-                                : <Typography sx={{ fontSize: 17, fontWeight: 800, color: PRIMARY, letterSpacing: 0.5, mt: 0.2 }}>{nextId || '—'}</Typography>}
-                        </Box>
-                    </Stack>
-                </Stack>
-            </Box>
 
             {/* Employee table */}
             <Box sx={{ ...card, p: 0, overflow: 'hidden' }}>

@@ -220,11 +220,9 @@ const INITIAL_CONFIG = {
     emergencyLatesPerMonth: 1,
     informedLeavesAllowed: 1,
     latePenaltyEnabled: false,
-    latePenaltySlabs: [
-        { uptoMinutes: 20, amount: 50 },
-        { uptoMinutes: 60, amount: 100 },
-        { uptoMinutes: 120, amount: 200 },
-    ],
+    // No seed slabs. An unsaved policy shows zero tiers, not fake ₹50/₹100/₹200
+    // rows — the user adds their own with "Add Slab". (Same principle as shifts.)
+    latePenaltySlabs: [],
     latePenaltyBeyond: { type: 'half_day', amount: 0 },
     permissionDeductionEnabled: false,
     permissionFreeHoursPerMonth: 3,
@@ -249,16 +247,11 @@ const INITIAL_CONFIG = {
     lunchBreakMinutes: 60,
     shortBreakMinutes: 15,
 
-    shifts: [
-        {
-            shiftName: 'Morning Shift',
-            startTime: '08:00',
-            endTime: '16:00',
-            gracePeriodMinutes: 10,
-            lunchBreakMinutes: 45,
-            shortBreakMinutes: 15,
-        },
-    ],
+    // No seed shift. An entity with no saved policy (GetLeavePolicy → 404) must
+    // show ZERO shifts, not a fake "Morning Shift" — otherwise the screen looks
+    // configured when nothing has been saved, and the setup checklist disagrees.
+    // The user adds a shift explicitly with "Add Shift".
+    shifts: [],
 
     defaultWorkingDays: [1, 2, 3, 4, 5, 6],
 };
@@ -1248,6 +1241,14 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
 
                                 <AccordionDetails sx={{ p: 2, bgcolor: '#fff' }}>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                {(config.shifts || []).length === 0 && (
+                                    <Box sx={{ textAlign: 'center', py: 3, px: 2, border: '1.5px dashed #BAE6FD', borderRadius: '7px', bgcolor: '#FAFEFF' }}>
+                                        <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0F172A' }}>No shifts yet</Typography>
+                                        <Typography sx={{ fontSize: 12, color: '#64748B', mt: 0.3 }}>
+                                            This entity has no saved leave policy. Add at least one shift, then save the policy.
+                                        </Typography>
+                                    </Box>
+                                )}
                                 {(config.shifts || []).map((shift, idx) => {
                                     const startMins = parseTimeToMinutes(shift.startTime);
                                     const endMins = parseTimeToMinutes(shift.endTime);
@@ -1457,7 +1458,7 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                                             '&.Mui-disabled': { color: '#9CA3AF', borderColor: '#E5E7EB', bgcolor: '#F9FAFB' },
                                         }}
                                     >
-                                        Add Another Shift
+                                        {(config.shifts || []).length === 0 ? 'Add Shift' : 'Add Another Shift'}
                                     </Button>
                                     <Typography sx={{ fontSize: '11.5px', color: (config.shifts || []).length >= MAX_SHIFTS ? '#DC2626' : '#9CA3AF', fontWeight: 600 }}>
                                         {(config.shifts || []).length} / {MAX_SHIFTS} shifts
@@ -1604,6 +1605,11 @@ export default function LeaveMasterScreen({ initialTab = 0, hideTabBar = false }
                                                     Penalty increases with how late the staff arrives (counted after start time + grace).
                                                 </Typography>
 
+                                                {(config.latePenaltySlabs || []).length === 0 && (
+                                                    <Typography sx={{ fontSize: 12, color: '#B45309', fontStyle: 'italic', mb: 1 }}>
+                                                        No slabs yet — add one or more tiers below.
+                                                    </Typography>
+                                                )}
                                                 {(config.latePenaltySlabs || []).map((slab, i, arr) => {
                                                     const from = i === 0 ? 1 : (Number(arr[i - 1].uptoMinutes) || 0) + 1;
                                                     const onlyOneSlab = (config.latePenaltySlabs || []).length <= 1;

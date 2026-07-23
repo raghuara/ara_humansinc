@@ -20,7 +20,7 @@ import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import { useSelector } from 'react-redux';
 import { selectWebsiteSettings } from '../../../redux/slices/websiteSettingsSlice';
 import SnackBar from '../../SnackBar';
-import { approvePayrollPayslipsDashboard, getPayrollPayslipByRollNumber } from '../../../Api/Api';
+import { approvePayrollPayslipsDashboard, getPayrollPayslip } from '../../../Api/Api';
 import brandLogo from '../../../images/Logo---Colour.png';
 
 const COMPANY_NAME = 'ARA HumanSync';
@@ -62,14 +62,6 @@ const numToWords = (num) => {
 };
 const amountInWords = (n) => `Indian Rupee ${numToWords(n)} Only`;
 
-const MONTHS = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-const currentYear = new Date().getFullYear();
-const YEARS = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
-
 const EarningRow = ({ label, value, bold }) => (
     <Box sx={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -77,16 +69,83 @@ const EarningRow = ({ label, value, bold }) => (
     }}>
         <Typography sx={{ fontSize: 12, color: bold ? '#1a1a1a' : '#374151', fontWeight: bold ? 700 : 400 }}>{label}</Typography>
         <Typography sx={{ fontSize: 12, fontWeight: bold ? 800 : 600, color: bold ? '#1a1a1a' : '#374151' }}>
-            {Number(value).toLocaleString()}
+            {Number(value || 0).toLocaleString('en-IN')}
         </Typography>
     </Box>
 );
 
-const formatMonthParam = (monthIndex, year) =>
-    `${String(monthIndex + 1).padStart(2, '0')}-${year}`;
+// Last 12 payout-month options as { value: 'YYYY-MM', label: 'July 2026' }.
+const buildMonths = () => {
+    const opts = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        opts.push({
+            value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+            label: d.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+            isCurrent: i === 0,
+        });
+    }
+    return opts;
+};
+
+// The A4 payslip layout was built for an earlier response shape. Map the current
+// GetPayslip response onto it (earnings/deductions arrays → the itemised fields
+// the layout renders) so the slip renders unchanged.
+const toOldPayslipShape = (d = {}) => {
+    const earn = Array.isArray(d.earnings) ? d.earnings : [];
+    const ded = Array.isArray(d.deductions) ? d.deductions : [];
+    const amt = (arr, ...cats) => {
+        const hit = arr.find((x) => cats.includes(String(x.category || '').toLowerCase()));
+        return hit ? Number(hit.amount) || 0 : 0;
+    };
+    return {
+        cycle: d.cycle || {},
+        company: {},
+        employeeInformation: {
+            employeeName: d.employee?.name,
+            employeeId: d.employee?.employeeCode,
+            department: d.employee?.department,
+            bankAccountNoMasked: d.employee?.accountNumber,
+            bankName: d.employee?.bankName,
+        },
+        attendance: {
+            workingDays: d.attendance?.workingDays ?? 0,
+            presentDays: d.attendance?.present ?? 0,
+            absentDays: d.attendance?.absent ?? 0,
+            lopDays: d.attendance?.lop ?? 0,
+            paidHolidays: d.attendance?.paidLeave ?? 0,
+        },
+        earnings: {
+            basicSalary: amt(earn, 'basic', 'basicsalary'),
+            hra: amt(earn, 'hra'),
+            da: amt(earn, 'da', 'dearnessallowance'),
+            transportAllowance: amt(earn, 'conveyance', 'transport', 'transportallowance'),
+            specialAllowance: amt(earn, 'specialallowance'),
+            incentive: amt(earn, 'punctualitybonus', 'incentive', 'bonus'),
+            additionalSalary: amt(earn, 'additionalsalary', 'addsalary'),
+            grossEarnings: Number(d.totals?.totalEarnings) || 0,
+        },
+        deductions: {
+            pfLabel: 'Provident Fund (PF)', pfAmount: amt(ded, 'pf'),
+            esiLabel: 'ESI', esiAmount: amt(ded, 'esi'),
+            ptLabel: 'Professional Tax', ptAmount: amt(ded, 'pt'),
+            tdsLabel: 'TDS', tdsAmount: amt(ded, 'tds'),
+            totalDeductions: Number(d.totals?.totalDeductions) || 0,
+        },
+        totals: { netSalary: Number(d.totals?.netSalary) || 0 },
+        signature: {
+            employeeSignatureLabel: 'Employee Signature',
+            accountsManagerLabel: 'Accounts Manager',
+            authorizedSignatoryLabel: 'Authorized Signatory',
+        },
+    };
+};
 
 export default function ApprovePayroll() {
     const websiteSettings = useSelector(selectWebsiteSettings);
+    // This login's own employee code — filtered out of the approval list below.
+    const myCode = useSelector((s) => String(s.auth?.user?.loginId || '').toUpperCase());
 
     const [loading, setLoading] = useState(false);
     const [payrollData, setPayrollData] = useState([]);
@@ -98,10 +157,8 @@ export default function ApprovePayroll() {
     const [payslipData, setPayslipData] = useState(null);
     const [payslipLoading, setPayslipLoading] = useState(false);
 
-    const [fromMonth, setFromMonth] = useState(new Date().getMonth());
-    const [fromYear, setFromYear] = useState(currentYear);
-    const [toMonth, setToMonth] = useState(new Date().getMonth());
-    const [toYear, setToYear] = useState(currentYear);
+    const months = useMemo(buildMonths, []);
+    const [payoutMonth, setPayoutMonth] = useState(months[0].value); // YYYY-MM
 
     const [open, setOpen] = useState(false);
     const [status, setStatus] = useState(false);
@@ -121,18 +178,26 @@ export default function ApprovePayroll() {
         try {
             const res = await http.get(approvePayrollPayslipsDashboard);
             const data = res.data.data;
-            const employees = (data.employees || []).map(emp => ({
-                id: emp.id,
-                rollNumber: emp.rollNumber || '-',
-                name: emp.name || '-',
-                department: emp.department || '-',
-                designation: emp.designation || '-',
-                basicSalary: emp.basicSalary || 0,
-                grossSalary: emp.grossSalary || 0,
-                deductions: emp.deductions || 0,
-                netSalary: emp.netSalary || 0,
-                status: emp.status || 'Pending',
-            }));
+            // Records are keyed by employeeCode now; alias to rollNumber so the
+            // table, search, approve and payslip fetch read one field.
+            // An approver never sees / acts on their OWN payslip row — no one
+            // approves their own salary (myCode = this login's employee code).
+            const employees = (data.employees || [])
+                .filter((emp) => !myCode || String(emp.employeeCode || '').toUpperCase() !== myCode)
+                .map(emp => ({
+                    id: emp.id,
+                    employeeCode: emp.employeeCode,
+                    rollNumber: emp.employeeCode ?? emp.rollNumber ?? '-',
+                    name: emp.name || '-',
+                    department: emp.department || '-',
+                    designation: emp.designation || '-',
+                    basicSalary: emp.basicSalary || 0,
+                    grossSalary: emp.grossSalary || 0,
+                    deductions: emp.deductions || 0,
+                    netSalary: emp.netSalary || 0,
+                    status: emp.status || 'Pending',
+                    payslipAvailable: emp.payslipAvailable ?? true,
+                }));
             setPayrollData(employees);
         } catch {
             showSnack('Failed to load payroll data', false);
@@ -141,24 +206,20 @@ export default function ApprovePayroll() {
         }
     };
 
-    useEffect(() => {
-        if (viewDialogOpen && selectedEmployee) {
-            fetchPayslip(selectedEmployee.rollNumber, fromMonth, fromYear, toMonth, toYear);
-        }
-    }, [viewDialogOpen, fromMonth, fromYear, toMonth, toYear]);
-
-    const fetchPayslip = async (rollNumber, fMonth, fYear, tMonth, tYear) => {
+    // GET /PayrollCycle/GetPayslip?payoutMonth=YYYY-MM&employeeCode=
+    const fetchPayslip = async (employeeCode, pMonth) => {
+        if (!employeeCode) return;
         setPayslipLoading(true);
         setPayslipData(null);
         try {
-            const res = await http.get(getPayrollPayslipByRollNumber, {
-                params: {
-                    RollNumber: rollNumber,
-                    FromMonth: formatMonthParam(fMonth, fYear),
-                    ToMonth: formatMonthParam(tMonth, tYear),
-                },
+            const res = await http.get(getPayrollPayslip, {
+                params: { payoutMonth: pMonth, employeeCode },
             });
-            setPayslipData(res.data.data);
+            if (res.data && !res.data.error) {
+                setPayslipData(toOldPayslipShape(res.data.data));
+            } else {
+                showSnack(res.data?.message || 'Failed to load payslip', false);
+            }
         } catch {
             showSnack('Failed to load payslip', false);
         } finally {
@@ -166,12 +227,15 @@ export default function ApprovePayroll() {
         }
     };
 
+    useEffect(() => {
+        if (viewDialogOpen && selectedEmployee) {
+            fetchPayslip(selectedEmployee.employeeCode || selectedEmployee.rollNumber, payoutMonth);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewDialogOpen, payoutMonth, selectedEmployee]);
+
     const handleViewPayslip = (employee) => {
         setSelectedEmployee(employee);
-        setFromMonth(new Date().getMonth());
-        setFromYear(currentYear);
-        setToMonth(new Date().getMonth());
-        setToYear(currentYear);
         setViewDialogOpen(true);
     };
 
@@ -188,13 +252,9 @@ export default function ApprovePayroll() {
         showSnack(`Payslip approved for ${row.name}`, true);
     };
 
-    const periodLabel = payslipData?.periodLabel || (() => {
-        const from = `${MONTHS[fromMonth].substring(0, 3)} ${fromYear}`;
-        const to = `${MONTHS[toMonth].substring(0, 3)} ${toYear}`;
-        return fromMonth === toMonth && fromYear === toYear
-            ? `${MONTHS[fromMonth]} ${fromYear}`
-            : `${from} – ${to}`;
-    })();
+    const periodLabel = payslipData?.cycle?.payoutMonth
+        || months.find((m) => m.value === payoutMonth)?.label
+        || payoutMonth;
 
     const filteredData = useMemo(() => {
         const q = searchTerm.trim().toLowerCase();
@@ -687,69 +747,20 @@ export default function ApprovePayroll() {
 
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexWrap: 'wrap' }}>
                         <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.4, mr: 0.4 }}>
-                            From
+                            Payout month
                         </Typography>
-                        <FormControl size="small" sx={{ minWidth: 100 }}>
+                        <FormControl size="small" sx={{ minWidth: 150 }}>
                             <Select
-                                value={fromMonth}
-                                onChange={(e) => setFromMonth(e.target.value)}
+                                value={payoutMonth}
+                                onChange={(e) => setPayoutMonth(e.target.value)}
                                 sx={{
                                     fontSize: 12, height: 32, borderRadius: '7px', bgcolor: '#fff',
                                     '& fieldset': { borderColor: '#E5E7EB' },
                                     '&.Mui-focused fieldset': { borderColor: PRIMARY },
                                 }}
                             >
-                                {MONTHS.map((mo, i) => (
-                                    <MenuItem key={i} value={i} sx={{ fontSize: 12 }}>{mo}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                        <FormControl size="small" sx={{ minWidth: 76 }}>
-                            <Select
-                                value={fromYear}
-                                onChange={(e) => setFromYear(e.target.value)}
-                                sx={{
-                                    fontSize: 12, height: 32, borderRadius: '7px', bgcolor: '#fff',
-                                    '& fieldset': { borderColor: '#E5E7EB' },
-                                    '&.Mui-focused fieldset': { borderColor: PRIMARY },
-                                }}
-                            >
-                                {YEARS.map(y => (
-                                    <MenuItem key={y} value={y} sx={{ fontSize: 12 }}>{y}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-
-                        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.4, mx: 0.4 }}>
-                            To
-                        </Typography>
-                        <FormControl size="small" sx={{ minWidth: 100 }}>
-                            <Select
-                                value={toMonth}
-                                onChange={(e) => setToMonth(e.target.value)}
-                                sx={{
-                                    fontSize: 12, height: 32, borderRadius: '7px', bgcolor: '#fff',
-                                    '& fieldset': { borderColor: '#E5E7EB' },
-                                    '&.Mui-focused fieldset': { borderColor: PRIMARY },
-                                }}
-                            >
-                                {MONTHS.map((mo, i) => (
-                                    <MenuItem key={i} value={i} sx={{ fontSize: 12 }}>{mo}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                        <FormControl size="small" sx={{ minWidth: 76 }}>
-                            <Select
-                                value={toYear}
-                                onChange={(e) => setToYear(e.target.value)}
-                                sx={{
-                                    fontSize: 12, height: 32, borderRadius: '7px', bgcolor: '#fff',
-                                    '& fieldset': { borderColor: '#E5E7EB' },
-                                    '&.Mui-focused fieldset': { borderColor: PRIMARY },
-                                }}
-                            >
-                                {YEARS.map(y => (
-                                    <MenuItem key={y} value={y} sx={{ fontSize: 12 }}>{y}</MenuItem>
+                                {months.map((m) => (
+                                    <MenuItem key={m.value} value={m.value} sx={{ fontSize: 12 }}>{m.label}{m.isCurrent ? '  (current)' : ''}</MenuItem>
                                 ))}
                             </Select>
                         </FormControl>
@@ -835,7 +846,7 @@ export default function ApprovePayroll() {
                                         {periodLabel}
                                     </Typography>
                                     <Typography sx={{ fontSize: 9, color: '#94A3B8', mt: 0.3 }}>
-                                        Generated: {payslipData.generatedOn}
+                                        {payslipData.cycle?.paymentDate ? `Paid: ${payslipData.cycle.paymentDate}` : `Status: ${payslipData.cycle?.status || 'Draft'}`}
                                     </Typography>
                                 </Box>
                             </Box>

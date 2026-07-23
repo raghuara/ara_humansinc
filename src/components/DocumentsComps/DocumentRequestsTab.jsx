@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-    Box, Typography, Grid, Button, Stack, Chip, Avatar, IconButton, Tooltip, Collapse, LinearProgress,
+    Box, Typography, Grid, Button, Stack, Chip, Avatar, IconButton, Tooltip, Collapse, LinearProgress, CircularProgress,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Autocomplete, Checkbox, Snackbar, Alert,
 } from '@mui/material';
 import AssignmentRoundedIcon from '@mui/icons-material/AssignmentRounded';
@@ -14,33 +14,111 @@ import EventRoundedIcon from '@mui/icons-material/EventRounded';
 import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import PhoneIphoneRoundedIcon from '@mui/icons-material/PhoneIphoneRounded';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectEmployees } from '../../redux/slices/employeesSlice';
-import { selectDepartments, selectActiveEntityId } from '../../redux/slices/orgSlice';
+import { selectDepartments, selectActiveEntity } from '../../redux/slices/orgSlice';
 import {
-    selectRequests, selectDocTypes, requestProgress,
-    createRequest, cancelRequest, addRequestTargets, submitDocument,
+    selectDocTypes,
     approveSubmission, rejectSubmission, resetTarget, addDocType,
 } from '../../redux/slices/documentsSlice';
 import { PRIMARY, PRIMARY_LIGHT, PRIMARY_DARK, PRIMARY_BORDER } from '../../theme';
 import { fmtDate, initialsFromName as initials, paletteColor as colorFor } from '../../utils/format';
-import { putFile, openFile, fmtSize } from '../../utils/fileStore';
+import { openFile, fmtSize } from '../../utils/fileStore';
 import { solidBtn, ghostBtn, successBtn, dangerBtn, field, Panel, EmptyState, StatusChip, FileBadge, ConfirmDialog } from '../uiKit';
-import { FilePickButton } from './FilePicker';
+import http, { apiErrorMessage } from '../../Api/http';
+import { GetDocumentRequests, PostDocumentRequest, PostAddRecipients, DeleteDocumentRequest } from '../../Api/Api';
 
 const CATEGORIES = ['Identity', 'Education', 'Employment', 'Bank', 'Address', 'Medical', 'General'];
 const EMPTY = { docTypeId: '', title: '', category: 'General', note: '', dueDate: '', mandatory: 'yes', employees: [] };
 
 const fullName = (e) => `${e.firstName || ''} ${e.lastName || ''}`.trim();
 
+// The API sends dates as "DD-MM-YYYY", which `new Date()` (and therefore
+// fmtDate / the overdue check) can't parse. Flip to ISO so both work; anything
+// that doesn't match is passed through untouched.
+const isoFromDMY = (s) => {
+    const m = String(s || '').match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : (s || '');
+};
+
+// The reverse — the `type="date"` input gives ISO "YYYY-MM-DD", but the API
+// expects "DD-MM-YYYY" on writes. Empty stays empty (no due date).
+const dmyFromIso = (s) => {
+    const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : (s || '');
+};
+
+// Map one API request onto the shape this component already renders. Progress
+// is taken from the server's own counts rather than recomputed, and recipients
+// become `targets`. The file/submission detail isn't in this summary endpoint,
+// so those fields are simply absent.
+const normalizeDocRequest = (it) => {
+    const total = Number(it.totalRecipients) || (Array.isArray(it.recipients) ? it.recipients.length : 0);
+    const approved = Number(it.approved) || 0;
+    return {
+        id: it.id,
+        title: it.documentName ?? '',
+        category: it.category ?? '',
+        status: String(it.status ?? '').toLowerCase(),   // 'open'
+        mandatory: Boolean(it.isMandatory),
+        requestedBy: it.requestedByName ?? '',
+        requestedOn: isoFromDMY(it.requestedOn),
+        dueDate: isoFromDMY(it.dueDate),
+        entityId: it.entityId,
+        entityName: it.entityName ?? '',
+        note: it.note ?? '',
+        progress: {
+            total,
+            approved,
+            submitted: Number(it.toReview) || 0,
+            pending: Number(it.pending) || 0,
+            rejected: Number(it.rejected) || 0,
+            pct: total ? Math.round((approved / total) * 100) : 0,
+        },
+        targets: (Array.isArray(it.recipients) ? it.recipients : []).map((r) => ({
+            recipientId: r.recipientId,
+            employeeId: r.employeeCode ?? '',
+            employeeName: r.employeeName ?? '',
+            department: '',
+            status: String(r.status ?? '').toLowerCase(),  // pending | submitted | approved | rejected
+        })),
+    };
+};
+
 export default function DocumentRequestsTab() {
     const dispatch = useDispatch();
-    const requests = useSelector(selectRequests);
     const docTypes = useSelector(selectDocTypes);
     const employees = useSelector(selectEmployees);
     const departments = useSelector(selectDepartments);
-    const entityId = useSelector(selectActiveEntityId);
+    const activeEntity = useSelector(selectActiveEntity);
     const auth = useSelector((s) => s.auth);
+
+    // Document requests come from the API. Create, add-recipients and cancel are
+    // wired below; the per-recipient upload/approve/reject in the expanded rows
+    // still dispatch to Redux (those endpoints live on the Approvals tab).
+    const [requests, setRequests] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [saving, setSaving] = useState(false);      // create / add-people in flight
+    const [cancelling, setCancelling] = useState(false);
+
+    const loadRequests = useCallback(async () => {
+        setLoading(true);
+        try {
+            const { data: body } = await http.get(GetDocumentRequests);
+            if (body?.error) throw new Error(body.message || 'Could not load document requests.');
+            const items = Array.isArray(body?.data?.items) ? body.data.items : [];
+            setRequests(items.map(normalizeDocRequest));
+            setLoadError('');
+        } catch (err) {
+            setLoadError(apiErrorMessage(err, 'Could not load document requests.'));
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { loadRequests(); }, [loadRequests]);
 
     const [open, setOpen] = useState({});          // expanded request cards
     const [dialog, setDialog] = useState(null);    // { mode: 'create' | 'add', requestId? }
@@ -49,8 +127,9 @@ export default function DocumentRequestsTab() {
     const [reject, setReject] = useState(null);    // { requestId, employeeId, employeeName, title }
     const [reason, setReason] = useState('');
     const [confirm, setConfirm] = useState(null);
-    const [snack, setSnack] = useState('');
+    const [snack, setSnack] = useState(null);       // { msg, sev }
 
+    const notify = (msg, sev = 'success') => setSnack({ msg, sev });
     const reviewer = auth.userName || 'Management';
     const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }));
 
@@ -92,79 +171,83 @@ export default function DocumentRequestsTab() {
 
     const formValid = form.title.trim() && form.employees.length > 0;
 
-    const submitRequest = () => {
+    const submitRequest = async () => {
         setTried(true);
         if (!formValid) {
-            setSnack(!form.title.trim() ? 'Give the document a name.' : 'Pick at least one employee to request it from.');
+            notify(!form.title.trim() ? 'Give the document a name.' : 'Pick at least one employee to request it from.', 'warning');
             return;
         }
 
-        if (dialog.mode === 'add') {
-            dispatch(addRequestTargets({ requestId: dialog.requestId, employees: form.employees }));
-            setSnack(`Requested from ${form.employees.length} more employee${form.employees.length === 1 ? '' : 's'}.`);
-            setDialog(null);
-            return;
-        }
-
-        // Reuse the catalogue entry when one was picked; otherwise register the
-        // new name so it is available for reuse next time.
-        let docTypeId = form.docTypeId;
-        if (!docTypeId) {
-            const existing = docTypes.find((t) => t.name.trim().toLowerCase() === form.title.trim().toLowerCase());
-            if (existing) {
-                docTypeId = existing.id;
+        const codes = form.employees.map((e) => e.employeeId);
+        setSaving(true);
+        try {
+            if (dialog.mode === 'add') {
+                const { data: body } = await http.post(PostAddRecipients, {
+                    requestId: dialog.requestId,
+                    employeeCodes: codes,
+                });
+                if (body?.error) throw new Error(body.message || 'Could not add recipients.');
+                notify(body?.message || `Requested from ${codes.length} more employee${codes.length === 1 ? '' : 's'}.`);
             } else {
-                const action = dispatch(addDocType({ name: form.title.trim(), category: form.category }));
-                docTypeId = action.payload.id;
+                // Remember a newly-typed name locally so the Autocomplete suggests
+                // it next time — the request itself is persisted by the API.
+                if (!form.docTypeId && !docTypes.some((t) => t.name.trim().toLowerCase() === form.title.trim().toLowerCase())) {
+                    dispatch(addDocType({ name: form.title.trim(), category: form.category }));
+                }
+                const { data: body } = await http.post(PostDocumentRequest, {
+                    documentName: form.title.trim(),
+                    category: form.category,
+                    dueDate: dmyFromIso(form.dueDate),
+                    isMandatory: form.mandatory === 'yes',
+                    note: form.note,
+                    employeeCodes: codes,
+                    entityId: null,
+                    entityName: activeEntity?.name || '',
+                });
+                if (body?.error) throw new Error(body.message || 'Could not create the request.');
+                notify(body?.message || `${form.title.trim()} requested from ${codes.length} employee${codes.length === 1 ? '' : 's'}.`);
             }
+            setDialog(null);
+            await loadRequests();
+        } catch (err) {
+            notify(apiErrorMessage(err, 'Could not save the request.'), 'error');
+        } finally {
+            setSaving(false);
         }
+    };
 
-        dispatch(createRequest({
-            entityId,
-            docTypeId,
-            title: form.title.trim(),
-            note: form.note,
-            dueDate: form.dueDate,
-            mandatory: form.mandatory === 'yes',
-            requestedBy: reviewer,
-            employees: form.employees,
-        }));
-        setSnack(`${form.title.trim()} requested from ${form.employees.length} employee${form.employees.length === 1 ? '' : 's'}.`);
-        setDialog(null);
+    // Cancel a whole request — removes it from every recipient.
+    const doCancel = async () => {
+        if (!confirm || cancelling) return;
+        setCancelling(true);
+        try {
+            const { data: body } = await http.delete(DeleteDocumentRequest, { params: { id: confirm.id } });
+            if (body?.error) throw new Error(body.message || 'Could not cancel the request.');
+            notify(body?.message || `${confirm.title} request cancelled.`);
+            setConfirm(null);
+            await loadRequests();
+        } catch (err) {
+            notify(apiErrorMessage(err, 'Could not cancel the request.'), 'error');
+        } finally {
+            setCancelling(false);
+        }
     };
 
     // ── Row actions ─────────────────────────────────────────────────────────
-    // Stands in for the employee uploading from their app, so the approval flow
-    // can be walked end to end from this screen.
-    const simulateUpload = (req, target, file) => {
-        const fileKey = putFile(file);
-        dispatch(submitDocument({
-            requestId: req.id,
-            employeeId: target.employeeId,
-            employeeName: target.employeeName,
-            title: req.title,
-            fileName: file.name,
-            fileSize: file.size,
-            fileKey,
-            remark: '',
-        }));
-        setSnack(`${target.employeeName} submitted ${req.title} — awaiting your review.`);
-    };
-
     const approve = (req, target) => {
         dispatch(approveSubmission({ requestId: req.id, employeeId: target.employeeId, employeeName: target.employeeName, title: req.title, reviewedBy: reviewer }));
-        setSnack(`${req.title} approved — now filed under ${target.employeeName}.`);
+        notify(`${req.title} approved — now filed under ${target.employeeName}.`);
     };
 
     const doReject = () => {
         dispatch(rejectSubmission({ ...reject, reason: reason.trim(), reviewedBy: reviewer }));
-        setSnack(`${reject.title} rejected — ${reject.employeeName} can re-upload.`);
+        notify(`${reject.title} rejected — ${reject.employeeName} can re-upload.`);
         setReject(null);
         setReason('');
     };
 
     const view = (target) => {
-        if (!openFile(target.fileKey)) setSnack('That file was uploaded in an earlier session, so there is nothing to preview here.');
+        if (!openFile(target.fileKey)) notify('That file was uploaded in an earlier session, so there is nothing to preview here.', 'warning');
     };
 
     return (
@@ -175,14 +258,32 @@ export default function DocumentRequestsTab() {
                 chip={`${requests.filter((r) => r.status === 'open').length} open`}
                 chipColor="#B45309"
                 chipBg="#FFF7ED"
-                action={<Button startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ ...solidBtn, height: 38, px: 1.8, fontSize: 13 }}>New Request</Button>}
+                action={(
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <Tooltip arrow title="Reload">
+                            <IconButton onClick={loadRequests} disabled={loading} sx={{ border: '1px solid #E6EAF1', borderRadius: '7px', color: '#64748B', '&:hover': { bgcolor: PRIMARY_LIGHT, color: PRIMARY } }}>
+                                <RefreshRoundedIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                        </Tooltip>
+                        <Button startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ ...solidBtn, height: 38, px: 1.8, fontSize: 13 }}>New Request</Button>
+                    </Stack>
+                )}
             >
-                {requests.length === 0 ? (
+                {loading ? (
+                    <Box sx={{ p: 5, display: 'flex', justifyContent: 'center' }}><CircularProgress size={26} /></Box>
+                ) : loadError ? (
+                    <Box sx={{ p: 3 }}>
+                        <Alert severity="error" sx={{ borderRadius: '9px' }}
+                            action={<Button size="small" onClick={loadRequests} sx={{ textTransform: 'none', fontWeight: 700 }}>Retry</Button>}>
+                            {loadError}
+                        </Alert>
+                    </Box>
+                ) : requests.length === 0 ? (
                     <EmptyState icon={AssignmentRoundedIcon} title="No document requests yet" hint="Name a document once — e.g. Birth Certificate — and request it from as many employees as you need." />
                 ) : (
                     <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.2 }}>
                         {requests.map((req) => {
-                            const p = requestProgress(req);
+                            const p = req.progress;
                             const isOpen = Boolean(open[req.id]);
                             const overdue = req.dueDate && req.status === 'open' && new Date(req.dueDate) < new Date();
                             return (
@@ -278,17 +379,18 @@ export default function DocumentRequestsTab() {
                                                                 {t.remark && <Typography sx={{ fontSize: 11.5, color: '#64748B', mt: 0.4, fontStyle: 'italic' }}>“{t.remark}”</Typography>}
                                                             </>
                                                         ) : t.status === 'rejected' ? (
-                                                            <Typography sx={{ fontSize: 12, color: '#E11D48' }}>Rejected — {t.reason}</Typography>
+                                                            <Typography sx={{ fontSize: 12, color: '#E11D48' }}>Rejected{t.reason ? ` — ${t.reason}` : ''}</Typography>
+                                                        ) : t.status === 'submitted' ? (
+                                                            <Typography sx={{ fontSize: 12, color: '#0369A1', fontWeight: 600 }}>Submitted — awaiting your review</Typography>
+                                                        ) : t.status === 'approved' ? (
+                                                            <Typography sx={{ fontSize: 12, color: '#16A34A', fontWeight: 600 }}>Approved · filed in their record</Typography>
                                                         ) : (
                                                             <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center' }}>
                                                                 <PhoneIphoneRoundedIcon sx={{ fontSize: 14, color: '#CBD2DD' }} />
                                                                 <Typography sx={{ fontSize: 12, color: '#98A0AE' }}>Waiting for the employee to upload from the app</Typography>
                                                             </Stack>
                                                         )}
-                                                        {t.status === 'rejected' && t.fileName && (
-                                                            <Typography sx={{ fontSize: 11.5, color: '#E11D48', mt: 0.3 }}>Rejected — {t.reason}</Typography>
-                                                        )}
-                                                        {t.status === 'approved' && (
+                                                        {t.status === 'approved' && t.reviewedBy && (
                                                             <Typography sx={{ fontSize: 11, color: '#16A34A', mt: 0.3, fontWeight: 600 }}>Approved by {t.reviewedBy} on {fmtDate(t.reviewedOn)} · filed in their record</Typography>
                                                         )}
                                                     </Box>
@@ -307,9 +409,6 @@ export default function DocumentRequestsTab() {
                                                                 <Button onClick={() => approve(req, t)} startIcon={<CheckRoundedIcon sx={{ fontSize: 16 }} />} sx={{ ...successBtn, height: 32, px: 1.4, fontSize: 11.5 }}>Approve</Button>
                                                                 <Button onClick={() => { setReject({ requestId: req.id, employeeId: t.employeeId, employeeName: t.employeeName, title: req.title }); setReason(''); }} startIcon={<CloseRoundedIcon sx={{ fontSize: 16 }} />} sx={{ ...dangerBtn, height: 32, px: 1.4, fontSize: 11.5 }}>Reject</Button>
                                                             </>
-                                                        )}
-                                                        {t.status === 'pending' && (
-                                                            <FilePickButton label="Upload for them" onPick={(f) => simulateUpload(req, t, f)} />
                                                         )}
                                                         {t.status === 'rejected' && (
                                                             <Button onClick={() => dispatch(resetTarget({ requestId: req.id, employeeId: t.employeeId }))} startIcon={<ReplayRoundedIcon sx={{ fontSize: 16 }} />} sx={{ ...ghostBtn, height: 32, px: 1.4, fontSize: 11.5 }}>Ask again</Button>
@@ -453,9 +552,11 @@ export default function DocumentRequestsTab() {
                     )}
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2.5 }}>
-                    <Button onClick={() => setDialog(null)} sx={{ ...ghostBtn, height: 40, px: 2 }}>Cancel</Button>
-                    <Button onClick={submitRequest} startIcon={<EventRoundedIcon sx={{ fontSize: 18 }} />} sx={{ ...solidBtn, height: 40, px: 2.4 }}>
-                        {dialog?.mode === 'add' ? 'Add to request' : 'Send Request'}
+                    <Button onClick={() => setDialog(null)} disabled={saving} sx={{ ...ghostBtn, height: 40, px: 2 }}>Cancel</Button>
+                    <Button onClick={submitRequest} disabled={saving}
+                        startIcon={saving ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <EventRoundedIcon sx={{ fontSize: 18 }} />}
+                        sx={{ ...solidBtn, height: 40, px: 2.4 }}>
+                        {saving ? 'Saving…' : dialog?.mode === 'add' ? 'Add to request' : 'Send Request'}
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -483,14 +584,14 @@ export default function DocumentRequestsTab() {
             <ConfirmDialog
                 open={Boolean(confirm)}
                 onClose={() => setConfirm(null)}
-                onConfirm={() => { dispatch(cancelRequest(confirm.id)); setSnack(`${confirm.title} request cancelled.`); setConfirm(null); }}
+                onConfirm={doCancel}
                 title="Cancel this request?"
                 body={confirm ? `The ${confirm.title} request will be withdrawn from all ${confirm.targets.length} employee(s). Files already approved stay in their records.` : ''}
                 confirmLabel="Cancel request"
             />
 
-            <Snackbar open={Boolean(snack)} autoHideDuration={3600} onClose={() => setSnack('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
-                <Alert onClose={() => setSnack('')} severity={/Give|Pick|earlier session/.test(snack) ? 'warning' : 'success'} variant="filled" sx={{ borderRadius: '7px' }}>{snack}</Alert>
+            <Snackbar open={Boolean(snack)} autoHideDuration={3600} onClose={() => setSnack(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+                <Alert onClose={() => setSnack(null)} severity={snack?.sev || 'success'} variant="filled" sx={{ borderRadius: '7px' }}>{snack?.msg}</Alert>
             </Snackbar>
         </Box>
     );

@@ -14,8 +14,6 @@ import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ContactEmergencyRoundedIcon from '@mui/icons-material/ContactEmergencyRounded';
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded';
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import VpnKeyRoundedIcon from '@mui/icons-material/VpnKeyRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
@@ -28,6 +26,7 @@ import { selectDepartmentNames, selectDesignationNames } from '../redux/slices/o
 import http, { apiErrorMessage } from '../Api/http';
 import { GetEmployeeById, UpdateEmployee, SetEmployeeLoginPassword } from '../Api/Api';
 import { toApiDate, toInputDate, fmtApiDate, numOrNull, txt } from '../utils/apiFields';
+import EmployeeDocuments from '../components/EmployeeDocuments';
 
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
@@ -292,7 +291,6 @@ export default function EmployeeDetailPage() {
         );
     }
 
-    const documents = Array.isArray(emp.documents) ? emp.documents : [];
 
     return (
         <Box sx={{ p: 2 }}>
@@ -416,36 +414,8 @@ export default function EmployeeDetailPage() {
                     </SectionCard>
                 ))}
 
-                {/* Documents — whatever GetEmployeeById returned for this employee */}
-                <SectionCard icon={FolderRoundedIcon} title="Documents">
-                    {documents.length > 0 ? (
-                        <Grid container spacing={1.5}>
-                            {documents.map((d, i) => {
-                                const name = d.name || d.documentType || d.fileName || `Document ${i + 1}`;
-                                const url = d.url || d.fileUrl || d.documentUrl;
-                                return (
-                                    <Grid size={{ xs: 12, sm: 6 }} key={d.id ?? `${name}-${i}`}>
-                                        <Stack direction="row" spacing={1.3} sx={{ alignItems: 'center', p: 1.4, borderRadius: '9px', border: '1px solid #EEF1F6', bgcolor: '#F8FAFC' }}>
-                                            <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }} noWrap>{name}</Typography>
-                                                {d.fileName && <Typography sx={{ fontSize: 10.5, color: '#98A0AE' }} noWrap>{d.fileName}</Typography>}
-                                            </Box>
-                                            {url && (
-                                                <Tooltip arrow title="Download">
-                                                    <IconButton size="small" component="a" href={url} target="_blank" rel="noreferrer" sx={{ color: '#94A3B8', '&:hover': { color: PRIMARY } }}>
-                                                        <DownloadRoundedIcon sx={{ fontSize: 17 }} />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            )}
-                                        </Stack>
-                                    </Grid>
-                                );
-                            })}
-                        </Grid>
-                    ) : (
-                        <Typography sx={{ fontSize: 13, color: '#C4C9D4', fontStyle: 'italic' }}>No documents on file for this employee.</Typography>
-                    )}
-                </SectionCard>
+                {/* Documents — live from the EmployeeDocument API (upload / download / delete) */}
+                <EmployeeDocuments employeeId={emp.id} />
             </Stack>
 
             {/* Set / reset password */}

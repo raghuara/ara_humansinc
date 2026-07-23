@@ -20,7 +20,6 @@ import HistoryIcon from '@mui/icons-material/History';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import GroupsIcon from '@mui/icons-material/Groups';
 import http from '../../Api/http';
-import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import SnackBar from '../SnackBar';
 import { GetBiometricMappings, PostBiometricMappings, UpdateBiometricMappings } from '../../Api/Api';
@@ -249,8 +248,6 @@ const VirtualStaffRow = memo(function VirtualStaffRow({
 });
 
 export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }) {
-    const user = useSelector(s => s.auth);
-    const currentRoll = user?.rollNumber;
     const navigate = useNavigate();
     // When rendered as a standalone route (no onBack prop) the back button
     // pops the router stack so we land on the previous Leave & Attendance view.
@@ -275,7 +272,7 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
     const [snackMsg, setSnackMsg]     = useState('');
     const showSnack = (msg, ok) => { setSnackMsg(msg); setSnackOpen(true); setSnackOk(ok); };
 
-    // ─── Data fetch — GET /GetBiometricMappings?academicYear=YYYY-YYYY ────
+    // ─── Data fetch — GET /GetBiometricMappings?financialYear=YYYY-YYYY ────
     // The API returns a flat list with status + biometricEmployeeId already
     // resolved per row. We keep two parallel id maps:
     //   • originalIds — snapshot of what the server currently has (drives
@@ -285,10 +282,8 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
         if (!financialYear) return;
         setIsLoading(true);
         try {
-            // `academicYear` is still the field name on this legacy endpoint; the
-            // value is the company's financial year.
             const res = await http.get(GetBiometricMappings, {
-                params: { academicYear: financialYear },
+                params: { financialYear },
             });
             const body = res?.data;
             if (body?.error) {
@@ -402,11 +397,10 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
     };
 
     // ─── Save — split dirty rows into NEW (POST) vs EXISTING (PUT) ────────
-    // The server flags rows already mapped via `status === 'Mapped'` and a
-    // non-null `academicYear`. New mappings hit PostBiometricMappings; edits
-    // (including clear-to-empty) hit UpdateBiometricMappings. Both share the
-    // same body shape:
-    //   { academicYear, updatedByRollNumber, items: [{ rollNumber, userType, biometricEmployeeId }] }
+    // Rows the server already holds (status 'Mapped', or an existing original
+    // id) go to UpdateBiometricMappings; brand-new mappings go to
+    // PostBiometricMappings. Both share the same body shape:
+    //   { financialYear, items: [{ employeeCode, biometricEmployeeId }] }
     const handleSave = async () => {
         if (dirtyRolls.length === 0) {
             showSnack('No changes to save', false);
@@ -415,26 +409,21 @@ export default function BiometricStaffMappingPage({ onBack, isEmbedded = false }
 
         const toCreateItems = [];
         const toUpdateItems = [];
-        dirtyRolls.forEach(roll => {
-            const row = staff.find(s => s.rollNumber === roll);
+        dirtyRolls.forEach(code => {
+            const row = staff.find(s => s.rollNumber === code);
             if (!row) return;
+            // `row.rollNumber` holds the employee code from GetBiometricMappings.
             const item = {
-                rollNumber: roll,
-                userType: row.userType || '',
-                biometricEmployeeId: draftIds[roll] || '',
+                employeeCode: code,
+                biometricEmployeeId: draftIds[code] || '',
             };
             // Existing server-side record? PUT. Otherwise POST a new one.
             const hadServerRecord = !!row.serverFinancialYear
-                || (originalIds[roll] || '').length > 0;
+                || (originalIds[code] || '').length > 0;
             (hadServerRecord ? toUpdateItems : toCreateItems).push(item);
         });
 
-        // `academicYear` is still the field name on these legacy endpoints; the
-        // value is the company's financial year.
-        const baseBody = {
-            academicYear: financialYear,
-            updatedByRollNumber: currentRoll,
-        };
+        const baseBody = { financialYear };
 
         setIsSaving(true);
         try {

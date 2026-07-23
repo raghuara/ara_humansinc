@@ -12,17 +12,18 @@ import {
     selectOpenVacancies, selectOpenPositions, selectInterviewsToday,
     selectAwaitingReview, selectCandidates,
 } from '../redux/slices/recruitmentSlice';
+import { selectEffectiveModules } from '../redux/slices/authSlice';
+import { hasModule } from '../data/serverModules';
 import { PRIMARY, PRIMARY_LIGHT } from '../theme';
 import { card, PageHeader, StatCards } from '../components/uiKit';
-import EntityField from '../components/EntityField';
 import InterviewsTab from '../components/RecruitmentComps/InterviewsTab';
 import VacanciesTab from '../components/RecruitmentComps/VacanciesTab';
 import CandidatesTab from '../components/RecruitmentComps/CandidatesTab';
 
 const TABS = [
-    { key: 'interviews', label: 'Interviews', icon: EventAvailableRoundedIcon },
-    { key: 'vacancies', label: 'Vacancies', icon: WorkOutlineRoundedIcon },
-    { key: 'candidates', label: 'Candidates', icon: PeopleAltRoundedIcon },
+    { key: 'interviews', label: 'Interviews', icon: EventAvailableRoundedIcon, module: 'recruitment-interviews' },
+    { key: 'vacancies', label: 'Vacancies', icon: WorkOutlineRoundedIcon, module: 'recruitment-vacancies' },
+    { key: 'candidates', label: 'Candidates', icon: PeopleAltRoundedIcon, module: 'recruitment-candidates' },
 ];
 
 export default function RecruitmentPage() {
@@ -32,10 +33,14 @@ export default function RecruitmentPage() {
     const todayList = useSelector(selectInterviewsToday);
     const awaiting = useSelector(selectAwaitingReview);
     const candidates = useSelector(selectCandidates);
+    const modules = useSelector(selectEffectiveModules);
 
-    // Interviews is the daily screen, so it's the default tab.
-    const tabKey = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'interviews';
-    const index = TABS.findIndex((t) => t.key === tabKey);
+    // Only the tabs this role's module list allows; a denied/absent ?tab= falls
+    // back to the first allowed tab. Interviews is the daily screen, so it leads.
+    const shownTabs = TABS.filter((t) => !t.module || hasModule(modules, t.module));
+    const visibleTabs = shownTabs.length ? shownTabs : TABS.slice(0, 1);
+    const tabKey = visibleTabs.some((t) => t.key === params.get('tab')) ? params.get('tab') : visibleTabs[0].key;
+    const index = visibleTabs.findIndex((t) => t.key === tabKey);
 
     const inPipeline = candidates.filter((c) => ['applied', 'interviewing', 'on-hold', 'selected'].includes(c.status)).length;
     const joined = candidates.filter((c) => c.status === 'joined').length;
@@ -50,12 +55,12 @@ export default function RecruitmentPage() {
     return (
         <Box>
             <Box sx={{ p: 2, pb: 0 }}>
+                {/* Entity comes from the sidebar's "Working in" switcher and travels
+                    on the X-Entity-Id header — no per-page entity picker. */}
                 <PageHeader
                     title="Recruitment"
                     subtitle="Open a vacancy, add candidates against it, then run them through interview rounds"
-                >
-                    <EntityField />
-                </PageHeader>
+                />
 
                 <StatCards items={KPIS} />
 
@@ -63,7 +68,7 @@ export default function RecruitmentPage() {
                 <Box sx={{ ...card, px: 1 }}>
                     <Tabs
                         value={index}
-                        onChange={(_, i) => setParams({ tab: TABS[i].key }, { replace: true })}
+                        onChange={(_, i) => setParams({ tab: visibleTabs[i].key }, { replace: true })}
                         variant="scrollable"
                         scrollButtons="auto"
                         sx={{
@@ -73,7 +78,7 @@ export default function RecruitmentPage() {
                             '& .Mui-selected': { color: `${PRIMARY} !important` },
                         }}
                     >
-                        {TABS.map((t) => (
+                        {visibleTabs.map((t) => (
                             <Tab
                                 key={t.key}
                                 iconPosition="start"

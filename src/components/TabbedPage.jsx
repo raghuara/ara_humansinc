@@ -1,6 +1,9 @@
 import React from 'react';
 import { Box, Tabs, Tab, Badge } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { selectEffectiveModules } from '../redux/slices/authSlice';
+import { hasModule } from '../data/serverModules';
 import { PRIMARY } from '../theme';
 import { card } from './uiKit';
 
@@ -14,17 +17,28 @@ import { card } from './uiKit';
 // straight into Documents → Approvals) all working. An unknown or missing
 // ?tab falls back to the first tab rather than rendering nothing.
 //
-// tabs: [{ key, label, icon, badge?, render: () => <Page /> }]
+// A tab may carry a `module` key. If the login doesn't hold it, the tab is
+// hidden AND its content is unreachable — deep-linking ?tab= to a denied tab
+// falls back to the first allowed one, so the URL can't bypass access either.
+// Tabs with no `module` are ungated (fail-open), same rule as the sidebar.
+//
+// tabs: [{ key, label, icon, badge?, module?, render: () => <Page /> }]
 export default function TabbedPage({ tabs }) {
     const [params, setParams] = useSearchParams();
+    const modules = useSelector(selectEffectiveModules);
+
+    const allowedTabs = tabs.filter((t) => !t.module || hasModule(modules, t.module));
+    // If access hides every tab there's nothing to show — render the bar empty
+    // rather than crash on tabs[0]; the route guard normally prevents this.
+    const visibleTabs = allowedTabs.length ? allowedTabs : tabs.slice(0, 1);
 
     const requested = params.get('tab');
-    const activeKey = tabs.some((t) => t.key === requested) ? requested : tabs[0].key;
-    const index = tabs.findIndex((t) => t.key === activeKey);
+    const activeKey = visibleTabs.some((t) => t.key === requested) ? requested : visibleTabs[0].key;
+    const index = visibleTabs.findIndex((t) => t.key === activeKey);
 
     // `replace` keeps tab-hopping out of the history stack, so Back leaves the
     // page instead of walking through every tab you touched.
-    const select = (_, i) => setParams({ tab: tabs[i].key }, { replace: true });
+    const select = (_, i) => setParams({ tab: visibleTabs[i].key }, { replace: true });
 
     return (
         <Box>
@@ -42,7 +56,7 @@ export default function TabbedPage({ tabs }) {
                             '& .Mui-selected': { color: `${PRIMARY} !important` },
                         }}
                     >
-                        {tabs.map((t) => (
+                        {visibleTabs.map((t) => (
                             <Tab
                                 key={t.key}
                                 iconPosition="start"
@@ -68,7 +82,7 @@ export default function TabbedPage({ tabs }) {
 
             {/* Only the active tab is mounted, so each page's local state starts
                 clean and no hidden page keeps polling or holding stale data. */}
-            {tabs[index].render()}
+            {visibleTabs[index].render()}
         </Box>
     );
 }

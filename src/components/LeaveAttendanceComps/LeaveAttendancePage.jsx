@@ -308,7 +308,7 @@ export default function LeaveAttendancePage() {
     const netWorkDur  = formatDuration(netWorkMs);
 
     // GET /teachersattendance/GetTeachersAttendance
-    //   ?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD&academicYear=YYYY-YYYY
+    //   ?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD&financialYear=YYYY-YYYY
     // For the Today's Attendance tab fromDate === toDate === today, so the
     // response always contains zero or one record per staff member for today.
     //
@@ -373,8 +373,7 @@ export default function LeaveAttendancePage() {
                 params: {
                     fromDate: todayIso,
                     toDate: todayIso,
-                    // Legacy field name; the value is the company's financial year.
-                    academicYear: financialYear,
+                    financialYear,
                 },
             });
             if (res?.data && !res.data.error) {

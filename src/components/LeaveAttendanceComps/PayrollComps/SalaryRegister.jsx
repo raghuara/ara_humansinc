@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Box, Typography, Button, Grid, IconButton,
     Card, Chip, Table, TableBody, TableCell, TableContainer,
@@ -24,14 +24,30 @@ import SavingsIcon from '@mui/icons-material/Savings';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import { useSelector } from 'react-redux';
 import { selectWebsiteSettings } from '../../../redux/slices/websiteSettingsSlice';
 import { selectRoles } from '../../../redux/slices/rolesSlice';
 import * as XLSX from 'xlsx';
-import http from '../../../Api/http';
+import http, { apiErrorMessage } from '../../../Api/http';
 import SnackBar from '../../SnackBar';
 import { TableRowsSkeleton } from '../../ContentLoader';
-import { salaryRegisterDashboard } from '../../../Api/Api';
+import { getPayrollRegister, postLockAttendancePayrollCycle, postCalculatePayrollCycle } from '../../../Api/Api';
+
+// Last 12 payout-month options as { value: 'YYYY-MM', label: 'July 2026' }.
+const buildMonths = () => {
+    const opts = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        opts.push({
+            value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+            label: d.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+            isCurrent: i === 0,
+        });
+    }
+    return opts;
+};
 
 // ─── Payroll Cycle Stages (mirrors PayrollOverview) ─────────────────────────
 const PAYROLL_STAGES = [
@@ -86,6 +102,10 @@ export default function SalaryRegister() {
     const [creditDialogOpen, setCreditDialogOpen] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
 
+    const months = useMemo(buildMonths, []);
+    const [month, setMonth] = useState(months[0].value); // payoutMonth, default current
+    const [isRunning, setIsRunning] = useState(false);
+
     const [isLoading, setIsLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedRole, setSelectedRole] = useState('All');
@@ -108,30 +128,63 @@ export default function SalaryRegister() {
         setSnackMessage(msg); setSnackOpen(true); setSnackColor(success); setSnackStatus(success);
     };
 
-    const fetchSalaryRegister = async () => {
+    // GET /PayrollCycle/GetRegister?payoutMonth=YYYY-MM — populated only after
+    // PostCalculate has run for the month (otherwise rows come back empty).
+    const fetchSalaryRegister = useCallback(async () => {
         setIsLoading(true);
         try {
-            const res = await http.get(salaryRegisterDashboard);
-            if (!res.data.error) {
-                const d = res.data.data;
+            const res = await http.get(getPayrollRegister, { params: { payoutMonth: month } });
+            if (res.data && !res.data.error) {
+                const d = res.data.data || {};
                 setStats({
-                    totalGrossSalary: d.totalGrossSalary,
-                    totalNetSalary: d.totalNetSalary,
-                    totalDeductions: d.totalDeductions,
-                    totalEmployees: d.totalEmployees,
+                    totalGrossSalary: d.totalGross ?? 0,
+                    totalNetSalary: d.totalNet ?? 0,
+                    totalDeductions: d.totalDeductions ?? 0,
+                    totalEmployees: d.count ?? (d.rows?.length || 0),
                 });
-                setRecords(d.records);
+                // Rows are keyed by employeeCode; alias to rollNumber so the
+                // table, search, export and payslip dialog read one field.
+                setRecords((d.rows || []).map(r => ({
+                    ...r,
+                    rollNumber: r.employeeCode ?? r.rollNumber ?? '',
+                })));
+            } else {
+                setRecords([]);
+                setStats({ totalGrossSalary: 0, totalNetSalary: 0, totalDeductions: 0, totalEmployees: 0 });
             }
         } catch {
+            setRecords([]);
             showSnack('Failed to load salary register', false);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [month]);
 
     useEffect(() => {
         fetchSalaryRegister();
-    }, []);
+    }, [fetchSalaryRegister]);
+
+    // "Run Payroll" = lock the month's attendance, then calculate salaries. Only
+    // after this does GetRegister return the calculated rows.
+    const handleRunPayroll = async () => {
+        setIsRunning(true);
+        try {
+            const body = { payoutMonth: month };
+            const lock = await http.post(postLockAttendancePayrollCycle, body);
+            if (lock.data?.error) { showSnack(lock.data.message || 'Failed to lock attendance', false); return; }
+            const calc = await http.post(postCalculatePayrollCycle, body);
+            if (calc.data?.error) { showSnack(calc.data.message || 'Failed to calculate payroll', false); return; }
+            showSnack('Payroll calculated — register updated. Approve it from the Approve & Credit tab.', true);
+            await fetchSalaryRegister();
+        } catch (err) {
+            // The cycle endpoints return a real 400 (e.g. "The cycle is currently
+            // 'Approved' and cannot advance to 'AttendanceLocked'."), which axios
+            // throws — so surface the server's message, not a generic one.
+            showSnack(apiErrorMessage(err, 'Failed to run payroll. Please try again.'), false);
+        } finally {
+            setIsRunning(false);
+        }
+    };
 
     // Filter options are the login roles configured in Roles & Access — this is an
     // office HR system, so we group people by their login role, not by department.
@@ -313,6 +366,31 @@ export default function SalaryRegister() {
                     </Box>
 
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {/* Payout month */}
+                        <TextField
+                            select size="small" value={month}
+                            onChange={(e) => setMonth(e.target.value)}
+                            sx={{ width: { xs: '100%', sm: 180 }, '& .MuiOutlinedInput-root': { height: 34, fontSize: 12.5, borderRadius: '7px', bgcolor: '#fff' } }}
+                        >
+                            {months.map(m => <MenuItem key={m.value} value={m.value} sx={{ fontSize: 13 }}>{m.label}{m.isCurrent ? '  (current)' : ''}</MenuItem>)}
+                        </TextField>
+                        {/* Run Payroll — lock attendance + calculate */}
+                        <Button
+                            variant="contained" disableElevation
+                            onClick={handleRunPayroll}
+                            disabled={isRunning || isLoading}
+                            startIcon={isRunning ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <PlayArrowRoundedIcon sx={{ fontSize: 18 }} />}
+                            sx={{
+                                textTransform: 'none', fontSize: '12.5px', fontWeight: 700,
+                                bgcolor: PRIMARY, color: '#fff', border: `1.5px solid ${PRIMARY}`,
+                                borderRadius: '30px', px: 2.2, height: 34,
+                                boxShadow: `0 2px 6px ${PRIMARY}40`,
+                                '&:hover': { bgcolor: PRIMARY_DARK, borderColor: PRIMARY_DARK },
+                                '&.Mui-disabled': { bgcolor: '#E5E7EB', color: '#9CA3AF', borderColor: '#E5E7EB' },
+                            }}
+                        >
+                            {isRunning ? 'Running…' : 'Run Payroll'}
+                        </Button>
                         {/* Login-role pill select */}
                         <TextField
                             select

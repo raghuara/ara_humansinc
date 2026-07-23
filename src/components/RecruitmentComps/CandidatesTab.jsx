@@ -1,29 +1,30 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-    Box, Typography, Grid, Button, Stack, Chip, Avatar, IconButton, Tooltip, InputBase,
+    Box, Typography, Grid, Button, Stack, Chip, Avatar, IconButton, Tooltip, InputBase, CircularProgress,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, InputAdornment, Snackbar, Alert,
+    Menu, ListItemIcon,
 } from '@mui/material';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import HowToRegRoundedIcon from '@mui/icons-material/HowToRegRounded';
 import MailRoundedIcon from '@mui/icons-material/MailRounded';
 import CallRoundedIcon from '@mui/icons-material/CallRounded';
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
-import { useSelector, useDispatch } from 'react-redux';
-import {
-    selectCandidates, selectVacancies, selectInterviews,
-    addCandidate, deleteCandidate, markJoined,
-} from '../../redux/slices/recruitmentSlice';
-import { inr, fmtDate, initialsFromName as initials, paletteColor as colorFor } from '../../utils/format';
-import { solidBtn, ghostBtn, successBtn, field, th, td, Panel, EmptyState, ConfirmDialog } from '../uiKit';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import { inr, initialsFromName as initials, paletteColor as colorFor } from '../../utils/format';
+import { solidBtn, ghostBtn, field, th, td, Panel, EmptyState, ConfirmDialog } from '../uiKit';
+import http, { apiErrorMessage } from '../../Api/http';
+import { GetCandidates, AddCandidate, UpdateCandidate, SetCandidateStage, DeleteCandidate, GetVacancies } from '../../Api/Api';
 
 const SOURCES = ['Referral', 'LinkedIn', 'Naukri', 'Walk-in', 'Career Page', 'Agency', 'Other'];
 const NOTICE = ['Immediate', '15 days', '30 days', '60 days', '90 days'];
 
-// The candidate's position in the funnel. `joined` is terminal and consumes a
-// vacancy opening; `rejected` is terminal and carries the reason from the review.
+// The candidate's position in the funnel — keyed by the API's stage string
+// (lowercased, spaces → hyphens: "On Hold" → "on-hold").
 const STAGES = {
     applied: { label: 'Applied', color: '#64748B', bg: '#F1F5F9' },
     interviewing: { label: 'Interviewing', color: '#0369A1', bg: '#E0F2FE' },
@@ -32,67 +33,217 @@ const STAGES = {
     joined: { label: 'Joined', color: '#15803D', bg: '#DCFCE7' },
     rejected: { label: 'Rejected', color: '#E11D48', bg: '#FEE2E2' },
 };
+const stageKey = (s) => {
+    const t = String(s || '').toLowerCase().replace(/\s+/g, '-');
+    return STAGES[t] ? t : 'applied';
+};
+// The proper-case value SetCandidateStage expects for each stage key.
+const STAGE_API = {
+    applied: 'Applied', interviewing: 'Interviewing', 'on-hold': 'On Hold',
+    selected: 'Selected', joined: 'Joined', rejected: 'Rejected',
+};
+const STAGE_ORDER = ['applied', 'interviewing', 'on-hold', 'selected', 'joined', 'rejected'];
 
 const EMPTY = {
     vacancyId: '', name: '', email: '', phone: '', experience: '', currentCompany: '',
     expectedSalary: '', noticePeriod: '30 days', source: 'Referral',
 };
 
+const normalizeCandidate = (c) => ({
+    id: c.id,
+    vacancyId: c.vacancyId,
+    vacancyTitle: c.vacancyTitle ?? '',
+    name: c.fullName ?? '',
+    email: c.email ?? '',
+    phone: c.phone ?? '',
+    currentCompany: c.currentCompany ?? '',
+    isFresher: Boolean(c.isFresher),
+    experienceYears: Number(c.experienceYears) || 0,
+    expectedSalary: Number(c.expectedSalary) || 0,
+    noticePeriod: c.noticePeriod ?? '',
+    source: c.source ?? '',
+    stage: stageKey(c.stage),
+    appliedOn: c.appliedOn ?? '',
+    rejectReason: c.rejectReason ?? null,
+    roundsDecided: Number(c.roundsDecided) || 0,
+    roundsTotal: Number(c.roundsTotal) || 0,
+});
+
+const expText = (c) => (c.isFresher || c.experienceYears === 0 ? 'Fresher' : `${c.experienceYears} yr${c.experienceYears === 1 ? '' : 's'}`);
+
 export default function CandidatesTab() {
-    const dispatch = useDispatch();
-    const candidates = useSelector(selectCandidates);
-    const vacancies = useSelector(selectVacancies);
-    const interviews = useSelector(selectInterviews);
+    const [candidates, setCandidates] = useState([]);
+    const [openVacancies, setOpenVacancies] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [saving, setSaving] = useState(false);
 
     const [q, setQ] = useState('');
     const [stageFilter, setStageFilter] = useState('all');
-    const [dialog, setDialog] = useState(false);
+    const [dialog, setDialog] = useState(null);      // { mode: 'create' | 'edit', id? }
     const [form, setForm] = useState(EMPTY);
     const [tried, setTried] = useState(false);
-    const [confirm, setConfirm] = useState(null);
-    const [snack, setSnack] = useState('');
+    const [snack, setSnack] = useState(null);        // { msg, sev }
 
-    const vacancyTitle = (id) => vacancies.find((v) => v.id === id)?.title || 'Unknown role';
+    const [stageAnchor, setStageAnchor] = useState(null);
+    const [stageTarget, setStageTarget] = useState(null);   // candidate whose stage is changing
+    const [reject, setReject] = useState(null);             // candidate being rejected
+    const [rejectReason, setRejectReason] = useState('');
+    const [confirm, setConfirm] = useState(null);           // candidate pending deletion
+    const [busyId, setBusyId] = useState(null);             // row action (stage/delete) in flight
+    const [deleting, setDeleting] = useState(false);
 
-    // How many rounds each candidate has been through — the quickest read on
-    // where someone actually is, beyond their stage label.
-    const rounds = useMemo(() => {
-        const map = {};
-        candidates.forEach((c) => {
-            const mine = interviews.filter((i) => i.candidateId === c.id);
-            map[c.id] = { total: mine.length, done: mine.filter((i) => i.outcome).length };
-        });
-        return map;
-    }, [candidates, interviews]);
+    const notify = (msg, sev = 'success') => setSnack({ msg, sev });
+
+    const loadCandidates = useCallback(async () => {
+        setLoading(true);
+        try {
+            const { data: body } = await http.get(GetCandidates);
+            if (body?.error) throw new Error(body.message || 'Could not load candidates.');
+            const list = Array.isArray(body?.data?.candidates) ? body.data.candidates : [];
+            setCandidates(list.map(normalizeCandidate));
+            setLoadError('');
+        } catch (err) {
+            setLoadError(apiErrorMessage(err, 'Could not load candidates.'));
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Open vacancies feed the "Applying for" picker in the add dialog.
+    const loadVacancies = useCallback(async () => {
+        try {
+            const { data: body } = await http.get(GetVacancies);
+            if (body?.error) return;
+            const list = Array.isArray(body?.data?.vacancies) ? body.data.vacancies : [];
+            setOpenVacancies(list
+                .filter((v) => v.status === 'Open')
+                .map((v) => ({ id: v.id, title: v.roleTitle, department: v.department, open: Math.max(0, (Number(v.openings) || 0) - (Number(v.filled) || 0)) })));
+        } catch { /* picker just stays empty */ }
+    }, []);
+
+    useEffect(() => { loadCandidates(); loadVacancies(); }, [loadCandidates, loadVacancies]);
 
     const filtered = useMemo(() => {
         const s = q.trim().toLowerCase();
         return candidates.filter((c) => {
-            if (stageFilter !== 'all' && c.status !== stageFilter) return false;
+            if (stageFilter !== 'all' && c.stage !== stageFilter) return false;
             if (!s) return true;
-            return [c.name, c.email, c.phone, c.currentCompany, vacancyTitle(c.vacancyId)].some((x) => String(x || '').toLowerCase().includes(s));
+            return [c.name, c.email, c.phone, c.currentCompany, c.vacancyTitle].some((x) => String(x || '').toLowerCase().includes(s));
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [candidates, vacancies, q, stageFilter]);
+    }, [candidates, q, stageFilter]);
 
-    const openVacancies = vacancies.filter((v) => v.status === 'Open');
-
-    const openCreate = () => { setForm(EMPTY); setTried(false); setDialog(true); };
+    const openCreate = () => { setForm(EMPTY); setTried(false); setDialog({ mode: 'create' }); };
+    const openEdit = (c) => {
+        setForm({
+            vacancyId: c.vacancyId,
+            name: c.name,
+            email: c.email,
+            phone: c.phone,
+            experience: c.experienceYears ? String(c.experienceYears) : '',
+            currentCompany: c.currentCompany,
+            expectedSalary: c.expectedSalary ? String(c.expectedSalary) : '',
+            noticePeriod: c.noticePeriod || '30 days',
+            source: c.source || 'Referral',
+        });
+        setTried(false);
+        setDialog({ mode: 'edit', id: c.id, vacancyTitle: c.vacancyTitle });
+    };
+    const closeDialog = () => { if (!saving) setDialog(null); };
     const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+    // The picker lists open vacancies; when editing, the candidate's current
+    // vacancy is prepended so it stays selectable even if it's now closed.
+    const vacancyOptions = useMemo(() => {
+        if (dialog?.mode === 'edit' && form.vacancyId && !openVacancies.some((v) => v.id === form.vacancyId)) {
+            return [{ id: form.vacancyId, title: dialog.vacancyTitle || 'Current vacancy', department: '', open: 0, closed: true }, ...openVacancies];
+        }
+        return openVacancies;
+    }, [dialog, form.vacancyId, openVacancies]);
 
     const valid = form.name.trim() && form.vacancyId;
 
-    const submit = () => {
+    const submit = async () => {
         setTried(true);
-        if (!valid) { setSnack(!form.name.trim() ? 'The candidate needs a name.' : 'Pick the vacancy they are applying for.'); return; }
-        dispatch(addCandidate({ ...form, expectedSalary: Number(form.expectedSalary) || 0 }));
-        setSnack(`${form.name.trim()} added to ${vacancyTitle(form.vacancyId)}.`);
-        setDialog(false);
+        if (!valid) { notify(!form.name.trim() ? 'The candidate needs a name.' : 'Pick the vacancy they are applying for.', 'warning'); return; }
+
+        const payload = {
+            vacancyId: form.vacancyId,
+            fullName: form.name.trim(),
+            email: form.email || '',
+            phone: form.phone || '',
+            currentCompany: form.currentCompany || '',
+            experience: Number(form.experience) || 0,
+            expectedSalary: Number(form.expectedSalary) || 0,
+            noticePeriod: form.noticePeriod,
+            source: form.source,
+        };
+
+        const editing = dialog?.mode === 'edit';
+        setSaving(true);
+        try {
+            const { data: body } = editing
+                ? await http.put(UpdateCandidate, { id: dialog.id, ...payload })
+                : await http.post(AddCandidate, payload);
+            if (body?.error) throw new Error(body.message || 'Could not save the candidate.');
+            const vacTitle = vacancyOptions.find((v) => v.id === form.vacancyId)?.title || 'the vacancy';
+            notify(body?.message || (editing ? `${payload.fullName} updated.` : `${payload.fullName} added to ${vacTitle}.`));
+            setDialog(null);
+            await loadCandidates();
+        } catch (err) {
+            notify(apiErrorMessage(err, 'Could not save the candidate.'), 'error');
+        } finally {
+            setSaving(false);
+        }
     };
 
-    const join = (c) => {
-        dispatch(markJoined(c.id));
-        setSnack(`${c.name} marked as joined — one opening on ${vacancyTitle(c.vacancyId)} is now filled.`);
+    // ── Stage change ────────────────────────────────────────────────────────
+    // Rejecting needs a reason, so it detours through a dialog; every other
+    // stage is set straight away. `reason` only rides along on a reject.
+    const setStage = async (candidate, key, reason = '') => {
+        if (busyId) return;
+        setBusyId(candidate.id);
+        try {
+            const { data: body } = await http.put(SetCandidateStage, {
+                id: candidate.id,
+                stage: STAGE_API[key],
+                rejectReason: key === 'rejected' ? reason.trim() : '',
+            });
+            if (body?.error) throw new Error(body.message || 'Could not update the stage.');
+            notify(body?.message || `${candidate.name} moved to ${STAGES[key].label}.`);
+            setReject(null);
+            setRejectReason('');
+            await loadCandidates();
+        } catch (err) {
+            notify(apiErrorMessage(err, 'Could not update the stage.'), 'error');
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const pickStage = (key) => {
+        const candidate = stageTarget;
+        setStageAnchor(null);
+        setStageTarget(null);
+        if (!candidate || key === candidate.stage) return;
+        if (key === 'rejected') { setRejectReason(''); setReject(candidate); return; }
+        setStage(candidate, key);
+    };
+
+    const doDelete = async () => {
+        if (!confirm || deleting) return;
+        setDeleting(true);
+        try {
+            const { data: body } = await http.delete(DeleteCandidate, { params: { id: confirm.id } });
+            if (body?.error) throw new Error(body.message || 'Could not remove the candidate.');
+            notify(body?.message || `${confirm.name} removed.`);
+            setConfirm(null);
+            await loadCandidates();
+        } catch (err) {
+            notify(apiErrorMessage(err, 'Could not remove the candidate.'), 'error');
+        } finally {
+            setDeleting(false);
+        }
     };
 
     return (
@@ -114,11 +265,25 @@ export default function CandidatesTab() {
                             <SearchRoundedIcon sx={{ fontSize: 18, color: '#98A0AE' }} />
                             <InputBase placeholder="Search candidates…" value={q} onChange={(e) => setQ(e.target.value)} sx={{ fontSize: 13, flex: 1 }} />
                         </Stack>
+                        <Tooltip arrow title="Reload">
+                            <IconButton onClick={() => { loadCandidates(); loadVacancies(); }} disabled={loading} sx={{ border: '1px solid #E6EAF1', borderRadius: '7px', color: '#64748B', height: 38, width: 38, '&:hover': { bgcolor: '#F1EEFE', color: '#7C5CFC' } }}>
+                                <RefreshRoundedIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                        </Tooltip>
                         <Button startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ ...solidBtn, height: 38, px: 1.8, fontSize: 13 }}>Add Candidate</Button>
                     </Stack>
                 )}
             >
-                {filtered.length === 0 ? (
+                {loading ? (
+                    <Box sx={{ p: 5, display: 'flex', justifyContent: 'center' }}><CircularProgress size={26} /></Box>
+                ) : loadError ? (
+                    <Box sx={{ p: 3 }}>
+                        <Alert severity="error" sx={{ borderRadius: '9px' }}
+                            action={<Button size="small" onClick={loadCandidates} sx={{ textTransform: 'none', fontWeight: 700 }}>Retry</Button>}>
+                            {loadError}
+                        </Alert>
+                    </Box>
+                ) : filtered.length === 0 ? (
                     <EmptyState
                         icon={PeopleAltRoundedIcon}
                         title={q || stageFilter !== 'all' ? 'No candidates match these filters' : 'No candidates yet'}
@@ -126,7 +291,7 @@ export default function CandidatesTab() {
                     />
                 ) : (
                     <Box sx={{ overflowX: 'auto' }}>
-                        <Box component="table" sx={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse' }}>
+                        <Box component="table" sx={{ width: '100%', minWidth: 940, borderCollapse: 'collapse' }}>
                             <Box component="thead" sx={{ bgcolor: '#F4F3FB' }}>
                                 <Box component="tr">
                                     {['CANDIDATE', 'APPLIED FOR', 'EXPERIENCE', 'EXPECTED', 'ROUNDS', 'STAGE', 'ACTIONS'].map((h) => (
@@ -136,8 +301,7 @@ export default function CandidatesTab() {
                             </Box>
                             <Box component="tbody">
                                 {filtered.map((c, i) => {
-                                    const stage = STAGES[c.status] || STAGES.applied;
-                                    const r = rounds[c.id] || { total: 0, done: 0 };
+                                    const stage = STAGES[c.stage] || STAGES.applied;
                                     return (
                                         <Box component="tr" key={c.id} sx={{ bgcolor: i % 2 ? '#FBFAFE' : '#fff' }}>
                                             <Box component="td" sx={td}>
@@ -150,11 +314,11 @@ export default function CandidatesTab() {
                                                 </Stack>
                                             </Box>
                                             <Box component="td" sx={td}>
-                                                <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{vacancyTitle(c.vacancyId)}</Typography>
-                                                <Typography sx={{ fontSize: 11, color: '#98A0AE' }}>{c.source} · applied {fmtDate(c.appliedOn)}</Typography>
+                                                <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{c.vacancyTitle || 'Unknown role'}</Typography>
+                                                <Typography sx={{ fontSize: 11, color: '#98A0AE' }}>{c.source}{c.appliedOn ? ` · applied ${c.appliedOn}` : ''}</Typography>
                                             </Box>
                                             <Box component="td" sx={td}>
-                                                <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{c.experience || '—'}</Typography>
+                                                <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{expText(c)}</Typography>
                                                 <Typography sx={{ fontSize: 11, color: '#98A0AE' }} noWrap>{c.currentCompany || 'Fresher'}</Typography>
                                             </Box>
                                             <Box component="td" sx={td}>
@@ -162,30 +326,33 @@ export default function CandidatesTab() {
                                                 <Typography sx={{ fontSize: 11, color: '#98A0AE' }}>{c.noticePeriod || '—'} notice</Typography>
                                             </Box>
                                             <Box component="td" sx={td}>
-                                                {r.total === 0
+                                                {c.roundsTotal === 0
                                                     ? <Typography sx={{ fontSize: 12, color: '#C4C9D4', fontStyle: 'italic' }}>Not scheduled</Typography>
-                                                    : <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>{r.done} of {r.total} decided</Typography>}
+                                                    : <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>{c.roundsDecided} of {c.roundsTotal} decided</Typography>}
                                             </Box>
                                             <Box component="td" sx={td}>
-                                                <Chip label={stage.label} size="small" sx={{ height: 22, fontSize: 11, fontWeight: 700, bgcolor: stage.bg, color: stage.color }} />
-                                                {c.status === 'rejected' && c.rejectReason && (
+                                                <Tooltip arrow title="Change stage">
+                                                    <Chip
+                                                        label={stage.label} size="small" clickable
+                                                        disabled={busyId === c.id}
+                                                        onClick={(e) => { setStageTarget(c); setStageAnchor(e.currentTarget); }}
+                                                        onDelete={(e) => { setStageTarget(c); setStageAnchor(e.currentTarget); }}
+                                                        deleteIcon={busyId === c.id ? <CircularProgress size={12} sx={{ color: stage.color }} /> : <KeyboardArrowDownRoundedIcon sx={{ fontSize: 15 }} />}
+                                                        sx={{ height: 24, fontSize: 11, fontWeight: 700, bgcolor: stage.bg, color: stage.color, '& .MuiChip-deleteIcon': { color: stage.color, '&:hover': { color: stage.color } } }}
+                                                    />
+                                                </Tooltip>
+                                                {c.stage === 'rejected' && c.rejectReason && (
                                                     <Tooltip arrow title={c.rejectReason}>
                                                         <Typography sx={{ fontSize: 10.5, color: '#E11D48', mt: 0.3, maxWidth: 150, cursor: 'help' }} noWrap>{c.rejectReason}</Typography>
                                                     </Tooltip>
                                                 )}
                                             </Box>
                                             <Box component="td" sx={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                                {c.status === 'selected' && (
-                                                    <Tooltip arrow title="They accepted the offer and joined">
-                                                        <Button onClick={() => join(c)} startIcon={<HowToRegRoundedIcon sx={{ fontSize: 16 }} />} sx={{ ...successBtn, height: 32, px: 1.4, fontSize: 11.5 }}>
-                                                            Mark Joined
-                                                        </Button>
-                                                    </Tooltip>
-                                                )}
-                                                <Tooltip arrow title="Remove candidate">
-                                                    <IconButton size="small" onClick={() => setConfirm(c)} sx={{ ml: 0.6, color: '#94A3B8', '&:hover': { color: '#E11D48', bgcolor: '#FEF2F2' } }}>
-                                                        <DeleteOutlineRoundedIcon sx={{ fontSize: 17 }} />
-                                                    </IconButton>
+                                                <Tooltip arrow title="Edit">
+                                                    <IconButton size="small" onClick={() => openEdit(c)} sx={{ color: '#94A3B8', '&:hover': { color: '#7C5CFC', bgcolor: '#F1EEFE' } }}><EditRoundedIcon sx={{ fontSize: 17 }} /></IconButton>
+                                                </Tooltip>
+                                                <Tooltip arrow title="Remove">
+                                                    <IconButton size="small" onClick={() => setConfirm(c)} sx={{ ml: 0.4, color: '#94A3B8', '&:hover': { color: '#E11D48', bgcolor: '#FEF2F2' } }}><DeleteOutlineRoundedIcon sx={{ fontSize: 17 }} /></IconButton>
                                                 </Tooltip>
                                             </Box>
                                         </Box>
@@ -197,21 +364,23 @@ export default function CandidatesTab() {
                 )}
             </Panel>
 
-            {/* Add candidate */}
-            <Dialog open={dialog} onClose={() => setDialog(false)} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: '12px' } } }}>
+            {/* Add / edit candidate */}
+            <Dialog open={Boolean(dialog)} onClose={closeDialog} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: '12px' } } }}>
                 <DialogTitle sx={{ pb: 1 }}>
-                    <Typography sx={{ fontSize: 18, fontWeight: 800, color: '#0F172A' }}>Add Candidate</Typography>
-                    <Typography sx={{ fontSize: 12.5, color: '#6B7280', mt: 0.2 }}>They start as <strong>Applied</strong>, and move to Interviewing once you schedule their first round.</Typography>
+                    <Typography sx={{ fontSize: 18, fontWeight: 800, color: '#0F172A' }}>{dialog?.mode === 'edit' ? 'Edit Candidate' : 'Add Candidate'}</Typography>
+                    <Typography sx={{ fontSize: 12.5, color: '#6B7280', mt: 0.2 }}>
+                        {dialog?.mode === 'edit' ? 'Update the applicant’s details. Their stage is changed from the table.' : 'They start as Applied, and move to Interviewing once you schedule their first round.'}
+                    </Typography>
                 </DialogTitle>
                 <DialogContent sx={{ pt: '8px !important' }}>
                     <Grid container spacing={1.8}>
                         <Grid size={12}>
                             <TextField select label="Applying for" size="small" fullWidth value={form.vacancyId} onChange={set('vacancyId')}
                                 error={tried && !form.vacancyId} sx={field}
-                                helperText={openVacancies.length === 0 ? 'No open vacancies — open one on the Vacancies tab first.' : ' '}>
-                                {openVacancies.map((v) => (
+                                helperText={vacancyOptions.length === 0 ? 'No open vacancies — open one on the Vacancies tab first.' : ' '}>
+                                {vacancyOptions.map((v) => (
                                     <MenuItem key={v.id} value={v.id} sx={{ fontSize: 13.5 }}>
-                                        {v.title} — {v.department} ({Math.max(0, v.openings - v.filled)} open)
+                                        {v.title}{v.department ? ` — ${v.department}` : ''}{v.closed ? ' (closed)' : ` (${v.open} open)`}
                                     </MenuItem>
                                 ))}
                             </TextField>
@@ -236,7 +405,7 @@ export default function CandidatesTab() {
                         </Grid>
 
                         <Grid size={{ xs: 12, sm: 4 }}>
-                            <TextField label="Experience" size="small" fullWidth value={form.experience} onChange={set('experience')} placeholder="e.g. 5 yrs" sx={field} />
+                            <TextField label="Experience (years)" type="number" size="small" fullWidth value={form.experience} onChange={set('experience')} placeholder="e.g. 5" slotProps={{ htmlInput: { min: 0, step: 0.5 } }} sx={field} />
                         </Grid>
                         <Grid size={{ xs: 12, sm: 4 }}>
                             <TextField label="Expected salary" type="number" size="small" fullWidth value={form.expectedSalary} onChange={set('expectedSalary')}
@@ -256,22 +425,64 @@ export default function CandidatesTab() {
                     </Grid>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2.5 }}>
-                    <Button onClick={() => setDialog(false)} sx={{ ...ghostBtn, height: 40, px: 2 }}>Cancel</Button>
-                    <Button onClick={submit} sx={{ ...solidBtn, height: 40, px: 2.4 }}>Add Candidate</Button>
+                    <Button onClick={closeDialog} disabled={saving} sx={{ ...ghostBtn, height: 40, px: 2 }}>Cancel</Button>
+                    <Button onClick={submit} disabled={saving} startIcon={saving ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : null} sx={{ ...solidBtn, height: 40, px: 2.4 }}>
+                        {saving ? 'Saving…' : dialog?.mode === 'edit' ? 'Save Changes' : 'Add Candidate'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Stage picker */}
+            <Menu anchorEl={stageAnchor} open={Boolean(stageAnchor)} onClose={() => { setStageAnchor(null); setStageTarget(null); }}
+                slotProps={{ paper: { sx: { borderRadius: '9px', minWidth: 190 } } }}>
+                <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#9CA3AF', px: 1.5, py: 0.7, letterSpacing: 0.4 }}>MOVE TO STAGE</Typography>
+                {STAGE_ORDER.map((key) => {
+                    const s = STAGES[key];
+                    const isCurrent = stageTarget?.stage === key;
+                    return (
+                        <MenuItem key={key} onClick={() => pickStage(key)} disabled={Boolean(busyId)} sx={{ fontSize: 13, gap: 1 }}>
+                            <ListItemIcon sx={{ minWidth: 0 }}>
+                                <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: s.color }} />
+                            </ListItemIcon>
+                            {s.label}
+                            {isCurrent && <CheckRoundedIcon sx={{ fontSize: 16, color: s.color, ml: 'auto' }} />}
+                        </MenuItem>
+                    );
+                })}
+            </Menu>
+
+            {/* Reject reason */}
+            <Dialog open={Boolean(reject)} onClose={() => { if (!busyId) setReject(null); }} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: '12px' } } }}>
+                <DialogTitle sx={{ pb: 0.5 }}>
+                    <Typography sx={{ fontSize: 17, fontWeight: 800, color: '#0F172A' }}>Reject candidate</Typography>
+                    <Typography sx={{ fontSize: 12.5, color: '#6B7280', mt: 0.2 }}>{reject?.name}{reject?.vacancyTitle ? ` · ${reject.vacancyTitle}` : ''}</Typography>
+                </DialogTitle>
+                <DialogContent sx={{ pt: '8px !important' }}>
+                    <TextField label="Reason" size="small" fullWidth multiline minRows={3} autoFocus
+                        placeholder="e.g. Salary expectations above band; strong profile — keep for future roles."
+                        value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} sx={field} />
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2.5 }}>
+                    <Button onClick={() => setReject(null)} disabled={Boolean(busyId)} sx={{ ...ghostBtn, height: 40, px: 2 }}>Cancel</Button>
+                    <Button onClick={() => setStage(reject, 'rejected', rejectReason)} disabled={Boolean(busyId) || !rejectReason.trim()}
+                        startIcon={busyId ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : null}
+                        sx={{ height: 40, px: 2.4, fontWeight: 700, textTransform: 'none', borderRadius: '7px', bgcolor: '#DC2626', color: '#fff', '&:hover': { bgcolor: '#B91C1C' }, '&.Mui-disabled': { bgcolor: '#FCA5A5', color: '#fff' } }}>
+                        {busyId ? 'Rejecting…' : 'Reject'}
+                    </Button>
                 </DialogActions>
             </Dialog>
 
             <ConfirmDialog
                 open={Boolean(confirm)}
-                onClose={() => setConfirm(null)}
-                onConfirm={() => { dispatch(deleteCandidate(confirm.id)); setSnack(`${confirm.name} removed.`); setConfirm(null); }}
+                onClose={() => { if (!deleting) setConfirm(null); }}
+                onConfirm={doDelete}
                 title="Remove this candidate?"
-                body={confirm ? `${confirm.name} and their ${rounds[confirm.id]?.total ?? 0} scheduled interview(s) will be removed. This cannot be undone.` : ''}
+                body={confirm ? `${confirm.name} and their interview history for ${confirm.vacancyTitle || 'this vacancy'} will be removed. This cannot be undone.` : ''}
                 confirmLabel="Remove"
             />
 
-            <Snackbar open={Boolean(snack)} autoHideDuration={3400} onClose={() => setSnack('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
-                <Alert onClose={() => setSnack('')} severity={/needs|Pick/.test(snack) ? 'warning' : 'success'} variant="filled" sx={{ borderRadius: '7px' }}>{snack}</Alert>
+            <Snackbar open={Boolean(snack)} autoHideDuration={3400} onClose={() => setSnack(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+                <Alert onClose={() => setSnack(null)} severity={snack?.sev || 'success'} variant="filled" sx={{ borderRadius: '7px' }}>{snack?.msg}</Alert>
             </Snackbar>
         </Box>
     );

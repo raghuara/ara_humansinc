@@ -24,7 +24,7 @@ import SnackBar from '../../SnackBar';
 import {
     employeeComplianceDashboard, postPFConfiguration, postESIConfiguration,
     postProfessionalTaxConfiguration, postTDSConfiguration, getDeductionsAndCompliance,
-    updateEmployeeComplianceByRollnumber,
+    updateEmployeeComplianceByEmployeeCode,
 } from '../../../Api/Api';
 import * as XLSX from 'xlsx';
 
@@ -45,9 +45,13 @@ const getInitials = (name = '') =>
 
 const formatINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
+// Compliance values arrive as "12%", "0.75%", "200", "N/A" or "". A value is
+// "set" if it's non-empty and not "N/A"; the numeric part strips any % / ₹.
+const isComplianceSet = (v) =>
+    v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim().toUpperCase() !== 'N/A';
+const parseComplianceNum = (v) => Number(String(v ?? '').replace(/[^0-9.]/g, '')) || 0;
+
 export default function ComplianceSettings() {
-    const user = useSelector((state) => state.auth);
-    const rollNumber = user.rollNumber;
     const websiteSettings = useSelector(selectWebsiteSettings);
     const [activeTab, setActiveTab] = useState(0);
 
@@ -127,20 +131,20 @@ export default function ComplianceSettings() {
                     ...prev,
                     employeeContribution: Number(d.pfEmployeeContribution) || prev.employeeContribution,
                     employerContribution: Number(d.pfEmployerContribution) || prev.employerContribution,
-                    wageLimit:            Number(d.pfWageCellingLimite)    || prev.wageLimit,
+                    wageLimit:            Number(d.pfWageCeilingLimit)     || prev.wageLimit,
                     adminCharges:         Number(d.pfAdminCharges)         || prev.adminCharges,
                 }));
                 setEsiSettings(prev => ({
                     ...prev,
                     employeeContribution: Number(d.esiEmployeeContribution) || prev.employeeContribution,
                     employerContribution: Number(d.esiEmployerContribution) || prev.employerContribution,
-                    wageLimit:            Number(d.esiWageCellingLimite)    || prev.wageLimit,
+                    wageLimit:            Number(d.esiWageCeilingLimit)     || prev.wageLimit,
                 }));
                 setPtSettings(prev => ({
                     ...prev,
-                    monthlyDeduction: Number(d.monthlyPTDeduction)    || prev.monthlyDeduction,
-                    annualDeduction:  Number(d.annualPTDeduction)     || prev.annualDeduction,
-                    applicableFrom:   Number(d.applicationFromSalary) || prev.applicableFrom,
+                    monthlyDeduction: Number(d.monthlyPTDeduction)   || prev.monthlyDeduction,
+                    annualDeduction:  Number(d.annualPTDeduction)    || prev.annualDeduction,
+                    applicableFrom:   Number(d.applicableFromSalary) || prev.applicableFrom,
                 }));
                 setTdsSettings(prev => ({
                     ...prev,
@@ -172,22 +176,25 @@ export default function ComplianceSettings() {
                 });
                 setEmployeeData((d.employees || []).map(emp => ({
                     id: emp.id,
-                    employeeId: emp.rollNumber,
-                    rollNumber: emp.rollNumber,
+                    // Rows are keyed by employeeCode now; keep employeeId/rollNumber
+                    // aliased so the table, search and edit dialog read one field.
+                    employeeCode: emp.employeeCode,
+                    employeeId: emp.employeeCode ?? emp.rollNumber,
+                    rollNumber: emp.employeeCode ?? emp.rollNumber,
                     name: emp.name,
                     designation: emp.designation,
                     basicSalary: emp.basicSalary,
                     incentive: emp.incentive ?? 0,
                     additionalSalary: emp.addSalary ?? 0,
                     compliance: {
-                        pfApplicable: emp.pf !== null && emp.pf !== '',
-                        pfPercentage: Number(emp.pf) || 0,
-                        esiApplicable: emp.esi !== null && emp.esi !== '',
-                        esiPercentage: Number(emp.esi) || 0,
-                        ptApplicable: emp.pt !== null && emp.pt !== '',
-                        ptAmount: Number(emp.pt) || 0,
-                        tdsApplicable: emp.tds !== null && emp.tds !== '',
-                        tdsPercentage: Number(emp.tds) || 0,
+                        pfApplicable: isComplianceSet(emp.pf),
+                        pfPercentage: parseComplianceNum(emp.pf),
+                        esiApplicable: isComplianceSet(emp.esi),
+                        esiPercentage: parseComplianceNum(emp.esi),
+                        ptApplicable: isComplianceSet(emp.pt),
+                        ptAmount: parseComplianceNum(emp.pt),
+                        tdsApplicable: isComplianceSet(emp.tds),
+                        tdsPercentage: parseComplianceNum(emp.tds),
                     },
                 })));
             } else {
@@ -221,19 +228,22 @@ export default function ComplianceSettings() {
     const handleSaveEmployeeCompliance = async () => {
         if (!selectedEmployee || !editedCompliance) return;
 
+        // PUT /Payroll/UpdateEmployeeComplianceByEmployeeCode
+        // PF/ESI/TDS carry a "%" suffix, PT is a plain amount; anything not
+        // applicable is sent as "N/A".
         const body = {
-            rollNumber:  selectedEmployee.rollNumber,
-            incentive:   selectedEmployee.incentive,
-            addSalary:   selectedEmployee.additionalSalary,
-            pf:  editedCompliance.pfApplicable  ? String(editedCompliance.pfPercentage)  : '',
-            esi: editedCompliance.esiApplicable ? String(editedCompliance.esiPercentage) : '',
-            pt:  editedCompliance.ptApplicable  ? String(editedCompliance.ptAmount)      : '',
-            tds: editedCompliance.tdsApplicable ? String(editedCompliance.tdsPercentage) : '',
+            EmployeeCode: selectedEmployee.employeeCode || selectedEmployee.rollNumber,
+            Incentive:    Number(selectedEmployee.incentive) || 0,
+            AddSalary:    Number(selectedEmployee.additionalSalary) || 0,
+            PF:  editedCompliance.pfApplicable  ? `${editedCompliance.pfPercentage}%`  : 'N/A',
+            ESI: editedCompliance.esiApplicable ? `${editedCompliance.esiPercentage}%` : 'N/A',
+            PT:  editedCompliance.ptApplicable  ? String(editedCompliance.ptAmount)    : 'N/A',
+            TDS: editedCompliance.tdsApplicable ? `${editedCompliance.tdsPercentage}%` : 'N/A',
         };
 
         setIsSavingCompliance(true);
         try {
-            const res = await http.put(updateEmployeeComplianceByRollnumber, body);
+            const res = await http.put(updateEmployeeComplianceByEmployeeCode, body);
 
             if (res.data && !res.data.error) {
                 setEmployeeData(employeeData.map(emp =>
@@ -302,21 +312,17 @@ export default function ComplianceSettings() {
     };
 
     const handleSave = async () => {
-        const now = new Date().toISOString();
-
         if (activeTab === 1) {
             if (!pfSettings.employeeContribution || !pfSettings.employerContribution) {
                 showSnack('Please fill all required PF fields', false);
                 return;
             }
+            // POST /Payroll/PostPFConfiguration
             const body = {
-                rollNumber: rollNumber,
-                createdOn: now,
-                updatedOn: now,
-                pfEmployeeContribution: String(pfSettings.employeeContribution),
-                pfEmployerContribution: String(pfSettings.employerContribution),
-                pfWageCellingLimite: String(pfSettings.wageLimit),
-                pfAdminCharges: String(pfSettings.adminCharges),
+                PFEmployeeContribution: String(pfSettings.employeeContribution),
+                PFEmployerContribution: String(pfSettings.employerContribution),
+                PFWageCeilingLimit:     String(pfSettings.wageLimit),
+                PFAdminCharges:         String(pfSettings.adminCharges),
             };
             setIsPFSaving(true);
             try {
@@ -339,13 +345,11 @@ export default function ComplianceSettings() {
                 showSnack('Please fill all required ESI fields', false);
                 return;
             }
+            // POST /Payroll/PostESIConfiguration
             const body = {
-                rollNumber: rollNumber,
-                createdOn: now,
-                updatedOn: now,
-                esiEmployeeContribution: String(esiSettings.employeeContribution),
-                esiEmployerContribution: String(esiSettings.employerContribution),
-                esiWageCellingLimite: String(esiSettings.wageLimit),
+                ESIEmployeeContribution: String(esiSettings.employeeContribution),
+                ESIEmployerContribution: String(esiSettings.employerContribution),
+                ESIWageCeilingLimit:     String(esiSettings.wageLimit),
             };
             setIsESISaving(true);
             try {
@@ -368,13 +372,11 @@ export default function ComplianceSettings() {
                 showSnack('Please fill all required PT fields', false);
                 return;
             }
+            // POST /Payroll/PostProfessionalTaxConfiguration
             const body = {
-                rollNumber: rollNumber,
-                createdOn: now,
-                updatedOn: now,
-                monthlyPTDeduction: String(ptSettings.monthlyDeduction),
-                annualPTDeduction: String(ptSettings.annualDeduction),
-                applicationFromSalary: String(ptSettings.applicableFrom),
+                MonthlyPTDeduction:   String(ptSettings.monthlyDeduction),
+                AnnualPTDeduction:    String(ptSettings.annualDeduction),
+                ApplicableFromSalary: String(ptSettings.applicableFrom),
             };
             setIsPTSaving(true);
             try {
@@ -393,14 +395,12 @@ export default function ComplianceSettings() {
         }
 
         if (activeTab === 4) {
+            // POST /Payroll/PostTDSConfiguration
             const body = {
-                rollNumber: rollNumber,
-                createdOn: now,
-                updatedOn: now,
-                standardDeduction: String(tdsSettings.standardDeduction),
-                section80cLimit: String(tdsSettings.section80C),
-                section80DLimit: String(tdsSettings.section80D),
-                hraExemption: tdsSettings.hraExemption ? 'Y' : 'N',
+                StandardDeduction: String(tdsSettings.standardDeduction),
+                Section80cLimit:   String(tdsSettings.section80C),
+                Section80DLimit:   String(tdsSettings.section80D),
+                HRAExemption:      tdsSettings.hraExemption ? 'Y' : 'N',
             };
             setIsTDSSaving(true);
             try {

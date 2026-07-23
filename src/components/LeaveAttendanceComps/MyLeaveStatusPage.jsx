@@ -14,7 +14,7 @@ import InboxIcon from '@mui/icons-material/Inbox';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import http from '../../Api/http';
 import { useSelector } from 'react-redux';
-import { getLeaveApprovalDashboard } from '../../Api/Api';
+import { GetLeaveApprovalStatusCheck } from '../../Api/Api';
 import useFinancialYear from '../../hooks/useFinancialYear';
 
 const PRIMARY = '#7C5CFC';
@@ -22,7 +22,6 @@ const PRIMARY_LIGHT = '#F1EEFE';
 const PRIMARY_DARK = '#6246E0';
 const PRIMARY_BORDER = '#C9BEFB';
 
-// API uses "Requested" for the pending state; we display it as "Pending".
 const STATUS_META = {
     Requested: { label: 'Pending',  color: '#B45309', bg: '#E0F2FE', border: '#BAE6FD', icon: PendingIcon },
     Pending:   { label: 'Pending',  color: '#B45309', bg: '#E0F2FE', border: '#BAE6FD', icon: PendingIcon },
@@ -42,9 +41,7 @@ const LEAVE_TYPE_STYLE = {
 const normaliseStatus = (s) => STATUS_META[s]?.label || s || 'Pending';
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// API returns DD-MM-YYYY strings (e.g. "09-06-2026"). Render as "09 Jun 2026".
-// Falls back to ISO datetime (legacy) or the raw value if not parseable.
+ 
 const formatApiDate = (raw) => {
     if (!raw) return '—';
     const ddmm = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
@@ -57,8 +54,7 @@ const formatApiDate = (raw) => {
     if (Number.isNaN(d.getTime())) return raw;
     return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
-
-// Convert DD-MM-YYYY → YYYY-MM-DD so localeCompare sorts dates correctly.
+ 
 const sortKey = (raw) => {
     if (!raw) return '';
     const ddmm = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
@@ -69,7 +65,6 @@ const sortKey = (raw) => {
 export default function MyLeaveStatusPage() {
     const user = useSelector((state) => state.auth);
     const financialYear = useFinancialYear();
-    const rollNumber = user?.rollNumber;
     const userType = user?.userType;
     const isSuperAdmin = userType === 'superadmin';
 
@@ -79,22 +74,18 @@ export default function MyLeaveStatusPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all'); // all | Pending | Approved | Rejected
 
-    // GET /leave/getLeaveApprovalDashboard?RollNumber=...&AcademicYear=YYYY-YYYY
-    // Response: { cards: { pendingCount, approvedCount, rejectedCount },
-    //             pending: [...], approved: [...], rejected: [...] }
-    // Each row already includes its `status`, so we just concat the 3 arrays
-    // and filter to the logged-in user's own leaves (forRollNumber match).
+    // GET /Leave/GetLeaveApprovalStatusCheck?financialYear=YYYY-YYYY
+    // Response: { error, count, leaves: [{ leaveApplicationId, employeeCode,
+    //   name, leaveType, fromDate, toDate, workingDays, reason, createdOn,
+    //   status: "Requested", ... }] }
+    // This endpoint returns leaves still awaiting a decision, so My Requests
+    // shows only the "Requested" (pending) ones.
     const fetchMyLeaves = async () => {
-        if (!rollNumber || !financialYear) return;
+        if (!financialYear) return;
         setIsFetching(true);
         try {
-            // `AcademicYear` is still the field name on this legacy endpoint; the
-            // value is the company's financial year.
-            const res = await http.get(getLeaveApprovalDashboard, {
-                params: {
-                    RollNumber: rollNumber,
-                    AcademicYear: financialYear,
-                },
+            const res = await http.get(GetLeaveApprovalStatusCheck, {
+                params: { financialYear },
             });
             const data = res?.data || {};
             if (data.error) {
@@ -102,23 +93,20 @@ export default function MyLeaveStatusPage() {
                 setServerCounts(null);
                 return;
             }
-            const pending  = Array.isArray(data.pending)  ? data.pending  : [];
-            const approved = Array.isArray(data.approved) ? data.approved : [];
-            const rejected = Array.isArray(data.rejected) ? data.rejected : [];
-            const merged = [...pending, ...approved, ...rejected];
-            // Only keep this user's own requests — endpoint may return others
-            // when the logged-in user is also an approver.
-            const mine = merged.filter(l => String(l.forRollNumber) === String(rollNumber));
+            const list = Array.isArray(data.leaves) ? data.leaves : [];
+            // Keep only the requested (pending) leaves…
+            const requested = list.filter(l => String(l.status).toLowerCase() === 'requested');
+            // …and only the logged-in user's own. The endpoint isn't scoped by
+            // employee, so match the row's employeeCode to whatever identifies
+            // this login. If we can't identify the user, show all rather than a
+            // blank page.
+            const myCode = String(user?.employeeCode || user?.rollNumber || user?.loginId || '').trim().toLowerCase();
+            const mine = myCode
+                ? requested.filter(l => String(l.employeeCode || '').trim().toLowerCase() === myCode)
+                : requested;
             setLeaves(mine);
-
-            // Counts are server-provided; recompute against the filtered list
-            // so the KPI cards reflect what the table actually shows.
-            const mineByStatus = (s) => mine.filter(l => normaliseStatus(l.status) === s).length;
-            setServerCounts({
-                Pending:  mineByStatus('Pending'),
-                Approved: mineByStatus('Approved'),
-                Rejected: mineByStatus('Rejected'),
-            });
+            // All rows are pending here; let the counts derive from the list.
+            setServerCounts(null);
         } catch (err) {
             console.error('Fetch my leave status failed:', err);
             setLeaves([]);
@@ -133,7 +121,7 @@ export default function MyLeaveStatusPage() {
         if (isSuperAdmin) return;
         fetchMyLeaves();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rollNumber, isSuperAdmin, financialYear]);
+    }, [isSuperAdmin, financialYear]);
 
     // Sort newest-first when an applied date exists. Dates from the API are
     // DD-MM-YYYY, so convert to YYYY-MM-DD via sortKey for correct ordering.

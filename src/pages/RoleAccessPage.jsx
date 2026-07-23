@@ -16,9 +16,9 @@ import UndoRoundedIcon from '@mui/icons-material/UndoRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectRoleById, replaceRoleAccess, renameRole } from '../redux/slices/rolesSlice';
-import { groupsFromRoleAccess } from '../data/accessModules';
+import { groupsFromRoleAccess, groupModulesByCategory } from '../data/accessModules';
 import http, { apiErrorMessage } from '../Api/http';
-import { GetRoleAccess, UpdateRoleAccess } from '../Api/Api';
+import { GetModules, GetRoleAccess, UpdateRoleAccess } from '../Api/Api';
 
 const PRIMARY = '#7C5CFC';
 const PRIMARY_LIGHT = '#F1EEFE';
@@ -76,19 +76,43 @@ export default function RoleAccessPage() {
         setLoading(true);
         setLoadError('');
         try {
-            const { data: body } = await http.get(GetRoleAccess, { params: { userTypeId } });
+            // Two questions, two endpoints: GetModules answers "what modules exist"
+            // and GetRoleAccess answers "which does THIS role have". Reading the
+            // catalogue separately means a brand-new user type still shows all 32
+            // toggles even if its access response only carries what's enabled.
+            const [modulesRes, accessRes] = await Promise.allSettled([
+                http.get(GetModules),
+                http.get(GetRoleAccess, { params: { userTypeId } }),
+            ]);
+
+            // Access is the one that can't be missing — without it there's nothing
+            // to draw the switches from, and saving a guess would wipe the role.
+            if (accessRes.status === 'rejected') throw accessRes.reason;
+            const body = accessRes.value?.data;
             if (body?.error) throw new Error(body.message || 'Could not load this role’s access.');
 
             const d = body?.data || {};
-            const next = groupsFromRoleAccess(d.categories);
 
-            const map = {};
+            // Which modules this role currently holds, keyed by moduleKey.
+            const enabled = {};
             (d.categories || []).forEach((c) => {
-                (c.modules || []).forEach((m) => { map[m.moduleKey] = !!m.enabled; });
+                (c.modules || []).forEach((m) => { enabled[m.moduleKey] = !!m.enabled; });
             });
 
+            // The catalogue drives the grid. If GetModules is unreachable, fall back
+            // to the categories GetRoleAccess sent rather than showing an empty page.
+            const modulesBody = modulesRes.status === 'fulfilled' ? modulesRes.value?.data : null;
+            const catalogue = Array.isArray(modulesBody?.data?.modules) && modulesBody.data.modules.length && !modulesBody.error
+                ? groupModulesByCategory(modulesBody.data.modules)
+                : groupsFromRoleAccess(d.categories);
+
+            // Every catalogue module gets an entry — absent from the access response
+            // means "not granted", not "doesn't exist".
+            const map = {};
+            catalogue.forEach((g) => { g.items.forEach((m) => { map[m.key] = !!enabled[m.key]; }); });
+
             setRole({ roleName: d.roleName, accentColour: d.accentColour, isSystem: Boolean(d.isSystem) });
-            setGroups(next);
+            setGroups(catalogue);
             setDraft(map);
             setSaved(map);
 

@@ -15,6 +15,38 @@ const DEFAULT_PREFIX = 'EMP';
 // Keep only letters, uppercase, capped at 5 characters.
 export const sanitizePrefix = (v = '') => String(v).replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 5);
 
+// Map one Employee/GetEmployees item onto the shape the app already reads.
+// The API sends a single `fullName` and `employeeCode`; the existing screens
+// expect `firstName`/`lastName`/`employeeId`, so those are synthesised here
+// while the richer API fields are carried through untouched.
+export const mapApiEmployee = (it) => {
+    const full = String(it.fullName || '').trim();
+    const sp = full.indexOf(' ');
+    const status = it.status ? it.status.charAt(0).toUpperCase() + it.status.slice(1).toLowerCase() : 'Active';
+    return {
+        id: it.id,
+        employeeId: it.employeeCode || '',
+        firstName: sp === -1 ? full : full.slice(0, sp),
+        lastName: sp === -1 ? '' : full.slice(sp + 1),
+        fullName: full,
+        email: it.personalEmail || '',
+        phone: it.personalMobile || '',
+        department: it.department || '',
+        designation: it.designation || '',
+        role: it.designation || '',
+        employmentType: it.employmentType || '',
+        doj: it.dateOfJoining || '',
+        // Onboarding sends `dateOfBirth` and the detail page reads it back, but
+        // the roster mapper used to drop it — so the birthday lists had nothing
+        // to work from. Carried through under the short name the screens use.
+        dob: it.dateOfBirth || it.dob || '',
+        status,
+        profilePhotoUrl: it.profilePhotoUrl || null,
+        entityId: it.entityId,
+        entityName: it.entityName || '',
+    };
+};
+
 const employeesSlice = createSlice({
     name: 'employees',
     initialState: { employees: seed, idPrefix: DEFAULT_PREFIX },
@@ -23,6 +55,11 @@ const employeesSlice = createSlice({
             // Allow empty while the user is editing; the fallback to DEFAULT_PREFIX
             // happens only when an ID is actually generated (see nextEmployeeCode).
             state.idPrefix = sanitizePrefix(action.payload);
+        },
+        // Replace the whole roster with the server's — the payload is expected
+        // to already be mapped through `mapApiEmployee`.
+        setEmployees(state, action) {
+            state.employees = Array.isArray(action.payload) ? action.payload : [];
         },
         addEmployee: {
             reducer(state, action) {
@@ -52,7 +89,7 @@ const employeesSlice = createSlice({
     },
 });
 
-export const { addEmployee, updateEmployee, resignEmployee, reactivateEmployee, removeEmployee, setIdPrefix } = employeesSlice.actions;
+export const { addEmployee, updateEmployee, resignEmployee, reactivateEmployee, removeEmployee, setIdPrefix, setEmployees } = employeesSlice.actions;
 export const selectEmployees = (s) => s.employees.employees;
 export const selectIdPrefix = (s) => (s.employees.idPrefix ?? DEFAULT_PREFIX);
 

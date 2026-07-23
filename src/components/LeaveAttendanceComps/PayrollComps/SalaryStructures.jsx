@@ -26,7 +26,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SnackBar from '../../SnackBar';
 import {
     getEmployees, postSalaryStructure, salaryStructureDashboard,
-    updateSalaryStructureByRollnumber, deleteSalaryStructureByRollnumber,
+    updateSalaryStructureByEmployeeCode, deleteSalaryStructureByEmployeeCode,
 } from '../../../Api/Api';
 import { useSelector } from 'react-redux';
 import { selectWebsiteSettings } from '../../../redux/slices/websiteSettingsSlice';
@@ -140,11 +140,19 @@ export default function SalaryStructures() {
         fetchDashboard();
     }, []);
 
+    // GET /Payroll/GetEmployees → { data: [{ employeeCode, name, designation,
+    // department, gender }] }. Alias employeeCode → rollNumber so the dropdown
+    // and the form keep reading one field name.
     const fetchEmployeeData = async () => {
         try {
             const res = await http.get(getEmployees);
-            setEmployeesData(res.data.data);
+            const list = Array.isArray(res.data?.data) ? res.data.data : [];
+            setEmployeesData(list.map(e => ({
+                ...e,
+                rollNumber: e.employeeCode ?? e.rollNumber ?? '',
+            })));
         } catch {
+            setEmployeesData([]);
         }
     };
 
@@ -155,7 +163,12 @@ export default function SalaryStructures() {
             if (res.data && !res.data.error) {
                 const { totalStructures, totalEmployees, salaryStructures } = res.data.data;
                 setKpiData({ totalStructures, totalEmployees });
-                setStructures(salaryStructures || []);
+                // Rows are keyed by employeeCode now — alias it to rollNumber so
+                // the table, search, edit and delete keep reading one field.
+                setStructures((salaryStructures || []).map(s => ({
+                    ...s,
+                    rollNumber: s.employeeCode ?? s.rollNumber ?? '',
+                })));
             } else {
                 showSnack('Failed to load salary structures', false);
             }
@@ -175,20 +188,24 @@ export default function SalaryStructures() {
         const total = calculateTotal();
 
         if (editMode) {
-            const rollNo = selectedStructure.rollNumber || selectedStructure.employeeRollNumber;
+            // PUT /Payroll/UpdateSalaryStructureByEmployeeCode — same body shape
+            // as create, keyed by EmployeeCode (no query param).
+            const empCode = selectedStructure.employeeCode
+                || selectedStructure.rollNumber
+                || selectedStructure.employeeRollNumber;
             const body = {
-                rollNumber: rollNo,
-                basicSalary: Number(formData.basicSalary),
-                hraPercent: Number(formData.hra),
-                daPercent: Number(formData.da),
-                conveyanceAllowance: String(formData.conveyance),
-                specialAllowance: String(formData.specialAllowance),
-                totalEarnings: total,
+                EmployeeCode:        empCode,
+                BasicSalary:         Number(formData.basicSalary),
+                HraPercent:          Number(formData.hra),
+                DaPercent:           Number(formData.da),
+                ConveyanceAllowance: String(formData.conveyance),
+                SpecialAllowance:    String(formData.specialAllowance),
+                TotalEarnings:       total,
             };
 
             setIsSaving(true);
             try {
-                const res = await http.put(updateSalaryStructureByRollnumber, body);
+                const res = await http.put(updateSalaryStructureByEmployeeCode, body);
 
                 if (res.data && !res.data.error) {
                     await fetchDashboard();
@@ -205,14 +222,15 @@ export default function SalaryStructures() {
             return;
         }
 
+        // POST /Payroll/PostSalaryStructure — body shape per the API contract.
         const body = {
-            rollNumber: formData.employeeRollNumber,
-            basicSalary: Number(formData.basicSalary),
-            hraPercent: Number(formData.hra),
-            daPercent: Number(formData.da),
-            conveyanceAllowance: String(formData.conveyance),
-            specialAllowance: String(formData.specialAllowance),
-            totalEarnings: total,
+            EmployeeCode:        formData.employeeRollNumber,
+            BasicSalary:         Number(formData.basicSalary),
+            HraPercent:          Number(formData.hra),
+            DaPercent:           Number(formData.da),
+            ConveyanceAllowance: String(formData.conveyance),
+            SpecialAllowance:    String(formData.specialAllowance),
+            TotalEarnings:       total,
         };
 
         setIsSaving(true);
@@ -234,14 +252,14 @@ export default function SalaryStructures() {
     };
 
     const handleDelete = async (structure) => {
-        const rollNo = structure.rollNumber || structure.employeeRollNumber;
-        if (!rollNo) {
-            showSnack('Cannot delete: roll number not found', false);
+        const empCode = structure.employeeCode || structure.rollNumber || structure.employeeRollNumber;
+        if (!empCode) {
+            showSnack('Cannot delete: employee code not found', false);
             return;
         }
         try {
-            const res = await http.delete(deleteSalaryStructureByRollnumber, {
-                params: { rollNumber: rollNo },
+            const res = await http.delete(deleteSalaryStructureByEmployeeCode, {
+                params: { employeeCode: empCode },
             });
 
             if (res.data && !res.data.error) {

@@ -72,6 +72,10 @@ const seedDesignations = [
 // short, upper-case and letter/number only.
 export const sanitizeCode = (v = '') => String(v).replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8);
 
+// Sentinel active-entity value: "work across every entity". The value the
+// backend expects for that case is this same string, so it can be sent as-is.
+export const ALL_ENTITY_ID = 'all';
+
 const orgSlice = createSlice({
     name: 'org',
     initialState: {
@@ -82,7 +86,21 @@ const orgSlice = createSlice({
     },
     reducers: {
         setActiveEntity(state, action) {
-            if (state.entities.some((e) => e.id === action.payload)) state.activeEntityId = action.payload;
+            if (action.payload === ALL_ENTITY_ID || state.entities.some((e) => e.id === action.payload)) {
+                state.activeEntityId = action.payload;
+            }
+        },
+
+        // Replace the whole entity list with what the API returned (the sidebar's
+        // "Working in" switcher reads from here). Keeps the current selection if it
+        // still exists; otherwise falls back to the first entity so nothing is
+        // pointing at a stale seed id.
+        setEntities(state, action) {
+            const list = Array.isArray(action.payload) ? action.payload : [];
+            state.entities = list;
+            if (state.activeEntityId !== ALL_ENTITY_ID && !list.some((e) => e.id === state.activeEntityId)) {
+                state.activeEntityId = list[0]?.id ?? null;
+            }
         },
 
         // ── Business entities ────────────────────────────────────────────────
@@ -159,7 +177,7 @@ const orgSlice = createSlice({
 });
 
 export const {
-    setActiveEntity,
+    setActiveEntity, setEntities,
     addEntity, updateEntity, deleteEntity,
     addDepartment, updateDepartment, deleteDepartment,
     addDesignation, updateDesignation, deleteDesignation,
@@ -173,9 +191,14 @@ export const selectActiveEntity = (s) => s.org.entities.find((e) => e.id === s.o
 export const selectAllDepartments = (s) => s.org.departments;
 export const selectAllDesignations = (s) => s.org.designations;
 
+export const selectIsAllEntities = (s) => s.org.activeEntityId === ALL_ENTITY_ID;
+
 // Scoped to the entity currently being worked on — what every screen wants.
-export const selectDepartments = (s) => s.org.departments.filter((d) => d.entityId === s.org.activeEntityId);
-export const selectDesignations = (s) => s.org.designations.filter((d) => d.entityId === s.org.activeEntityId);
+// With "All Entities" active, nothing is filtered out.
+export const selectDepartments = (s) =>
+    (s.org.activeEntityId === ALL_ENTITY_ID ? s.org.departments : s.org.departments.filter((d) => d.entityId === s.org.activeEntityId));
+export const selectDesignations = (s) =>
+    (s.org.activeEntityId === ALL_ENTITY_ID ? s.org.designations : s.org.designations.filter((d) => d.entityId === s.org.activeEntityId));
 
 // Plain name lists for the employee form dropdowns (active records only).
 export const selectDepartmentNames = (s) =>

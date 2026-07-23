@@ -11,9 +11,10 @@ import { useSelector } from 'react-redux';
 import {
     selectRequests, selectPendingApprovals, selectOrgDocs, selectEmployeeDocs, requestProgress,
 } from '../redux/slices/documentsSlice';
+import { selectEffectiveModules } from '../redux/slices/authSlice';
+import { hasModule } from '../data/serverModules';
 import { PRIMARY, PRIMARY_LIGHT } from '../theme';
 import { card, PageHeader, StatCards } from '../components/uiKit';
-import EntityField from '../components/EntityField';
 import DocumentRequestsTab from '../components/DocumentsComps/DocumentRequestsTab';
 import DocumentApprovalsTab from '../components/DocumentsComps/DocumentApprovalsTab';
 import OrgDocumentsTab from '../components/DocumentsComps/OrgDocumentsTab';
@@ -22,10 +23,10 @@ import EmployeeDocumentsTab from '../components/DocumentsComps/EmployeeDocuments
 // The tab lives in the URL (?tab=approvals) so the inbox and the topbar can
 // deep-link straight to the right section.
 const TABS = [
-    { key: 'requests', label: 'Requests', icon: AssignmentRoundedIcon },
-    { key: 'approvals', label: 'Approvals', icon: FactCheckRoundedIcon },
-    { key: 'organisation', label: 'Organisation Documents', icon: CorporateFareRoundedIcon },
-    { key: 'employee', label: 'Employee Documents', icon: FolderSharedRoundedIcon },
+    { key: 'requests', label: 'Requests', icon: AssignmentRoundedIcon, module: 'document-requests' },
+    { key: 'approvals', label: 'Approvals', icon: FactCheckRoundedIcon, module: 'document-approvals' },
+    { key: 'organisation', label: 'Organisation Documents', icon: CorporateFareRoundedIcon, module: 'organisation-documents' },
+    { key: 'employee', label: 'Employee Documents', icon: FolderSharedRoundedIcon, module: 'employee-documents' },
 ];
 
 export default function DocumentsPage() {
@@ -34,9 +35,15 @@ export default function DocumentsPage() {
     const pending = useSelector(selectPendingApprovals);
     const orgDocs = useSelector(selectOrgDocs);
     const employeeDocs = useSelector(selectEmployeeDocs);
+    const modules = useSelector(selectEffectiveModules);
 
-    const tabKey = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'requests';
-    const index = TABS.findIndex((t) => t.key === tabKey);
+    // Only the tabs this role's module list allows. A deep-linked ?tab= to a
+    // denied tab (or none at all) falls back to the first allowed tab, so the
+    // URL can't reach a screen the role can't open.
+    const shownTabs = TABS.filter((t) => !t.module || hasModule(modules, t.module));
+    const visibleTabs = shownTabs.length ? shownTabs : TABS.slice(0, 1);
+    const tabKey = visibleTabs.some((t) => t.key === params.get('tab')) ? params.get('tab') : visibleTabs[0].key;
+    const index = visibleTabs.findIndex((t) => t.key === tabKey);
 
     const stats = useMemo(() => {
         const open = requests.filter((r) => r.status === 'open');
@@ -53,12 +60,12 @@ export default function DocumentsPage() {
 
     return (
         <Box sx={{ p: 2 }}>
+            {/* Entity comes from the sidebar's "Working in" switcher and travels
+                on the X-Entity-Id header — no per-page entity picker. */}
             <PageHeader
                 title="Document Management"
                 subtitle="Request documents from employees, review what comes back, and keep shared company files in one place"
-            >
-                <EntityField />
-            </PageHeader>
+            />
 
             <StatCards items={KPIS} />
 
@@ -66,7 +73,7 @@ export default function DocumentsPage() {
             <Box sx={{ ...card, px: 1, mb: 1.5 }}>
                 <Tabs
                     value={index}
-                    onChange={(_, i) => setParams({ tab: TABS[i].key })}
+                    onChange={(_, i) => setParams({ tab: visibleTabs[i].key })}
                     variant="scrollable"
                     scrollButtons="auto"
                     sx={{
@@ -76,7 +83,7 @@ export default function DocumentsPage() {
                         '& .Mui-selected': { color: `${PRIMARY} !important` },
                     }}
                 >
-                    {TABS.map((t) => (
+                    {visibleTabs.map((t) => (
                         <Tab
                             key={t.key}
                             iconPosition="start"

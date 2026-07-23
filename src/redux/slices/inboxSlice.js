@@ -57,8 +57,14 @@ const seed = [
 
 const inboxSlice = createSlice({
     name: 'inbox',
-    initialState: { items: seed },
+    // `unreadCount` is the badge's source of truth — set from the Inbox API so
+    // the sidebar shows the real not-yet-seen count, independent of the seed
+    // items above (which only the legacy cross-slice listeners still touch).
+    initialState: { items: seed, unreadCount: 0 },
     reducers: {
+        setUnreadCount(state, action) {
+            state.unreadCount = Math.max(0, Number(action.payload) || 0);
+        },
         markRead(state, action) {
             const it = state.items.find((i) => i.id === action.payload);
             if (it) it.read = true;
@@ -134,9 +140,10 @@ const inboxSlice = createSlice({
     },
 });
 
-export const { markRead, markUnread, markAllRead, removeMessage, clearInbox, pushMessage } = inboxSlice.actions;
+export const { setUnreadCount, markRead, markUnread, markAllRead, removeMessage, clearInbox, pushMessage } = inboxSlice.actions;
 
 export const selectInbox = (s) => s.inbox.items;
-export const selectUnreadCount = (s) => s.inbox.items.filter((i) => !i.read).length;
+// Badge count now comes from the API-synced value, not the seed items.
+export const selectUnreadCount = (s) => s.inbox.unreadCount;
 
 export default inboxSlice.reducer;

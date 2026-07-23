@@ -1,7 +1,7 @@
 import React from 'react';
 import {
     Box, Typography, Stack, IconButton, Avatar, Tooltip, Menu, MenuItem,
-    Divider, InputBase, Drawer, useMediaQuery, Collapse, Breadcrumbs, Badge,
+    Divider, Drawer, useMediaQuery, Collapse, Breadcrumbs, Badge,
     Dialog, DialogContent, DialogActions, Button,
 } from '@mui/material';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
@@ -13,16 +13,14 @@ import SpaceDashboardRoundedIcon from '@mui/icons-material/SpaceDashboardRounded
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
 import RequestQuoteRoundedIcon from '@mui/icons-material/RequestQuoteRounded';
-import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded';
 import SavingsRoundedIcon from '@mui/icons-material/SavingsRounded';
-import MoreTimeRoundedIcon from '@mui/icons-material/MoreTimeRounded';
 import HowToRegRoundedIcon from '@mui/icons-material/HowToRegRounded';
+import BeachAccessRoundedIcon from '@mui/icons-material/BeachAccessRounded';
 import RuleRoundedIcon from '@mui/icons-material/RuleRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import PowerSettingsNewRoundedIcon from '@mui/icons-material/PowerSettingsNewRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded';
@@ -30,6 +28,9 @@ import FolderSharedRoundedIcon from '@mui/icons-material/FolderSharedRounded';
 import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded';
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
+import DashboardCustomizeRoundedIcon from '@mui/icons-material/DashboardCustomizeRounded';
+import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
@@ -37,25 +38,36 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { toggleSidebar } from '../redux/slices/sidebarSlice';
 import { logout } from '../redux/slices/authSlice';
-import { selectModules } from '../redux/slices/authSlice';
-import { canAccessRoute } from '../data/serverModules';
-import { selectUnreadCount } from '../redux/slices/inboxSlice';
-import { selectEntities, selectActiveEntity, setActiveEntity } from '../redux/slices/orgSlice';
-import { selectPendingApprovals } from '../redux/slices/documentsSlice';
-import { selectAwaitingReview } from '../redux/slices/recruitmentSlice';
-import { selectAdvanceRequests } from '../redux/slices/advancesSlice';
-import { selectOtRecords } from '../redux/slices/overtimeSlice';
+import { selectEffectiveModules, selectUserTypeId, selectUserEntityId, USER_TYPE } from '../redux/slices/authSlice';
+import { canAccessRoute, hasModule } from '../data/serverModules';
+import { selectUnreadCount, setUnreadCount } from '../redux/slices/inboxSlice';
+import { selectEntities, selectActiveEntity, selectActiveEntityId, setActiveEntity, setEntities } from '../redux/slices/orgSlice';
 import {
     setFinancialYearConfig, setSelectedFinancialYear, selectFinancialYearConfig,
     selectSelectedFinancialYear, selectFinancialYearOptions,
 } from '../redux/slices/financialYearSlice';
+import { setEmployees, mapApiEmployee } from '../redux/slices/employeesSlice';
 import http from '../Api/http';
-import { GetFinancialYearConfig } from '../Api/Api';
+import { GetFinancialYearConfig, GetEmployees, GetInbox, GetBusinessEntitiesDashboard } from '../Api/Api';
 import { PRIMARY, PRIMARY_LIGHT, GRADIENT } from '../theme';
 import brandLogo from '../images/Logo---Colour.png';
+import EntitySetupGate from '../components/EntitySetupGate';
 
 const EXPANDED = 252;
 const COLLAPSED = 78;
+
+// GetBusinessEntitiesDashboard → the shape the sidebar switcher reads
+// (id / name / code / colour / city). Keeps the "Working in" list in step with
+// the Business Entities page instead of the seed data.
+const normalizeEntity = (e) => ({
+    id: e.id,
+    name: e.companyName ?? '',
+    code: e.shortCode ?? '',
+    legalName: e.registeredLegalName ?? '',
+    color: e.entityColour || '#7C5CFC',
+    city: e.city ?? '',
+    status: e.status ?? (e.isActive === false ? 'Inactive' : 'Active'),
+});
 
 // ── Navigation model ────────────────────────────────────────────────────────
 // Grouped by how often you use it, not by subject. The six MAIN + PAYROLL +
@@ -82,8 +94,10 @@ const NAV = [
     },
     {
         type: 'section', label: 'Payroll', defaultOpen: true, items: [
-            { label: 'Run Payroll', icon: PaidRoundedIcon, to: '/dashboard/run-payroll' },
-            { label: 'Payroll Register', icon: ReceiptLongRoundedIcon, to: '/dashboard/payroll-register' },
+            {
+                label: 'Run Payroll', icon: PaidRoundedIcon, to: '/dashboard/run-payroll',
+                tabs: { register: 'Register', approve: 'Approve & Credit' },
+            },
             { label: 'Payslips', icon: FactCheckRoundedIcon, to: '/dashboard/payslips' },
             {
                 label: 'Advances & Overtime', icon: SavingsRoundedIcon, to: '/dashboard/pay-adjustments',
@@ -92,18 +106,26 @@ const NAV = [
         ],
     },
     {
-        type: 'section', label: 'Attendance', defaultOpen: true, items: [
+        // One tabbed page, but surfaced as two rows so the section isn't a lone
+        // item. Each row deep-links to its tab and is gated on its own module,
+        // so a login with only attendance (not leave) sees only the first row.
+        type: 'section', label: 'Attendance & Leave', defaultOpen: true, items: [
+            // Attendance is a tabbed page (Overview/Attendance/Reports/Biometric);
+            // `tabKey` deep-links it, `ownTabs` is which tabs light the row up,
+            // `module` is any-of. Leave is its own standalone page.
             {
-                label: 'Attendance & Leave', icon: HowToRegRoundedIcon, to: '/dashboard/attendance-leave',
-                tabs: { overview: 'Overview', attendance: 'Attendance', leave: 'Leave Management', reports: 'Reports' },
+                key: 'attendance', label: 'Attendance', icon: HowToRegRoundedIcon, to: '/dashboard/attendance-leave',
+                tabKey: 'attendance', ownTabs: ['overview', 'attendance', 'reports', 'biometric-mapping'],
+                module: ['attendance-overview', 'attendance', 'attendance-reports'],
             },
+            { key: 'leave', label: 'Leave', icon: BeachAccessRoundedIcon, to: '/dashboard/leave-management', module: 'leave-management' },
         ],
     },
     {
         type: 'section', label: 'Setup', defaultOpen: true, items: [
             {
                 label: 'Organisation', icon: ApartmentRoundedIcon, to: '/dashboard/organisation',
-                tabs: { entities: 'Business Entities', departments: 'Departments', designations: 'Designations' },
+                tabs: { departments: 'Departments', designations: 'Designations' },
             },
             {
                 label: 'Payroll Setup', icon: RequestQuoteRoundedIcon, to: '/dashboard/payroll-setup',
@@ -125,7 +147,15 @@ const FLAT_NAV = NAV.flatMap((n) => (n.type === 'section' ? n.items : [n]));
 // Breadcrumb trail. A tabbed page resolves to two crumbs — "Organisation ›
 // Departments" — so you can still see which screen you're actually on now that
 // tabs have replaced a nav row each.
+// Attendance & Leave is one tabbed page split across two sidebar rows, so its
+// crumb is resolved here rather than from a single nav entry.
+const ATTENDANCE_LEAVE_TABS = { overview: 'Overview', attendance: 'Attendance', reports: 'Reports', 'biometric-mapping': 'Biometric Mapping' };
+
 const crumbsFor = (pathname, search) => {
+    if (pathname === '/dashboard/attendance-leave') {
+        const tab = new URLSearchParams(search).get('tab');
+        return ['Attendance & Leave', ATTENDANCE_LEAVE_TABS[tab] || ATTENDANCE_LEAVE_TABS.overview];
+    }
     const hit = FLAT_NAV.find((i) => i.to === pathname);
     if (hit) {
         const tab = new URLSearchParams(search).get('tab');
@@ -168,14 +198,16 @@ export default function DashboardLayout() {
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const isExpanded = useSelector((s) => s.sidebar.isExpanded);
     const auth = useSelector((s) => s.auth);
-    const modules = useSelector(selectModules);
+    const modules = useSelector(selectEffectiveModules);
+    // Strictly userTypeId 1. Cross-entity work — the All Entities dashboard and
+    // the entity switcher — is gated on this and nothing else.
+    const isMasterAdmin = useSelector(selectUserTypeId) === USER_TYPE.MASTER_ADMIN;
+    const isMasterRoute = location.pathname === '/dashboard/master';
+    const userEntityId = useSelector(selectUserEntityId);
     const unread = useSelector(selectUnreadCount);
     const entities = useSelector(selectEntities);
     const activeEntity = useSelector(selectActiveEntity);
-    const docApprovals = useSelector(selectPendingApprovals);
-    const interviewReviews = useSelector(selectAwaitingReview);
-    const advanceRequests = useSelector(selectAdvanceRequests);
-    const otRecords = useSelector(selectOtRecords);
+    const activeEntityId = useSelector(selectActiveEntityId);
     const [anchor, setAnchor] = React.useState(null);
     const [entityAnchor, setEntityAnchor] = React.useState(null);
     const [fyAnchor, setFyAnchor] = React.useState(null);
@@ -206,6 +238,64 @@ export default function DashboardLayout() {
         return () => { cancelled = true; };
     }, [dispatch]);
 
+    // Hydrate the entity switcher from the same endpoint the Business Entities
+    // page uses, so the sidebar "Working in" list shows the real companies (not
+    // the two seed entities). Master Admin sees them all; anyone else is pinned to
+    // their own entity, matching the entity scoping across the app.
+    React.useEffect(() => {
+        let cancelled = false;
+        http.get(GetBusinessEntitiesDashboard)
+            .then(({ data: body }) => {
+                if (cancelled || body?.error) return;
+                const full = (Array.isArray(body?.data?.entities) ? body.data.entities : [])
+                    .map(normalizeEntity)
+                    // Inactive entities can't be worked in — keep them out of the
+                    // "Working in" switcher entirely. setEntities then snaps the
+                    // active selection to a live entity if it was pointing at one
+                    // that's now gone (e.g. the one just deactivated).
+                    .filter((e) => e.status !== 'Inactive')
+                    .sort((a, b) => a.id - b.id);   // lowest id first (API returns them unordered)
+                const list = isMasterAdmin ? full : full.filter((e) => String(e.id) === String(userEntityId));
+                if (list.length) dispatch(setEntities(list));
+            })
+            .catch(() => { /* sidebar keeps whatever entities it already has */ });
+        return () => { cancelled = true; };
+    }, [dispatch, isMasterAdmin, userEntityId]);
+
+    // Hydrate the shared employee roster from the API once, so every staff
+    // picker across the app (document requests, advances, overtime…) reads real
+    // people instead of the seed data. A failure leaves the seed in place.
+    // The roster is admin-only, so a role without the `employees` module (e.g. an
+    // Employee) skips it entirely rather than firing a call the API will 403.
+    React.useEffect(() => {
+        if (!hasModule(modules, 'employees')) return undefined;
+        let cancelled = false;
+        http.get(GetEmployees)
+            .then(({ data: body }) => {
+                if (cancelled || body?.error) return;
+                const items = Array.isArray(body?.data?.items) ? body.data.items : [];
+                if (items.length) dispatch(setEmployees(items.map(mapApiEmployee)));
+            })
+            .catch(() => { /* keep whatever roster is already in the store */ });
+        return () => { cancelled = true; };
+    }, [dispatch, modules]);
+
+    // Seed the sidebar's unread badge from the real inbox, so it's correct
+    // before the user ever opens the Inbox page. The page keeps it live after.
+    React.useEffect(() => {
+        let cancelled = false;
+        http.get(GetInbox, { params: { filter: 'all' } })
+            .then(({ data: body }) => {
+                if (cancelled || body?.error) return;
+                const s = body?.data?.summary;
+                const count = s ? s.unread
+                    : (body?.data?.messages || []).filter((m) => !(m.isRead ?? m.read)).length;
+                dispatch(setUnreadCount(count));
+            })
+            .catch(() => { /* badge just stays at its last value */ });
+        return () => { cancelled = true; };
+    }, [dispatch]);
+
     const expanded = isMobile ? true : isExpanded;
     const width = isExpanded ? EXPANDED : COLLAPSED;
     const initials = (auth.userName || auth.email || 'U').slice(0, 2).toUpperCase();
@@ -213,27 +303,37 @@ export default function DashboardLayout() {
     // Everything sitting on the admin's desk, read from the same selectors the
     // pages themselves use — so the sidebar can't disagree with the screens.
     // Zero-count rows are dropped rather than shown as "0".
-    const crumbs = crumbsFor(location.pathname, location.search);
+    // Home shows "My Info" for a login without the dashboard module, matching
+    // the page App actually renders there.
+    const crumbs = location.pathname === '/dashboard' && !hasModule(modules, 'dashboard')
+        ? ['My Info']
+        : crumbsFor(location.pathname, location.search);
+    const activeTab = new URLSearchParams(location.search).get('tab');
 
     // Hide the rows this login has no module for, then drop any section left
     // with nothing in it — an empty "PAYROLL" header would be worse than no
     // header at all. With no module list from the server, nothing is hidden.
+    // A row with an explicit `module` is gated on it (a string, or any-of an
+    // array — the split Attendance/Leave rows); everything else on its route.
+    const moduleAllowed = (m) => (Array.isArray(m) ? m.some((k) => hasModule(modules, k)) : hasModule(modules, m));
+    // `modules` here is the role-resolved list (built-in roles get their
+    // hard-coded set; custom roles get the server's), so gating a row on its
+    // module is all that's needed — the role rules are already baked in.
+    // The home row is never hidden — without the `dashboard` module it becomes
+    // "My Info", the personal view App renders in the dashboard's place.
+    const hasDashboard = hasModule(modules, 'dashboard');
+    const isHomeRow = (i) => i.to === '/dashboard' && !i.module;
+    const rowAllowed = (i) => (isHomeRow(i) ? true : (i.module ? moduleAllowed(i.module) : canAccessRoute(modules, i.to)));
+    const asHomeRow = (i) => (isHomeRow(i) && !hasDashboard ? { ...i, label: 'My Info', icon: BadgeRoundedIcon } : i);
     const visibleNav = React.useMemo(() => (
         NAV
             .map((n) => (n.type === 'section'
-                ? { ...n, items: n.items.filter((i) => canAccessRoute(modules, i.to)) }
+                ? { ...n, items: n.items.filter(rowAllowed).map(asHomeRow) }
                 : n))
-            .filter((n) => (n.type === 'section' ? n.items.length > 0 : canAccessRoute(modules, n.to)))
+            .filter((n) => (n.type === 'section' ? n.items.length > 0 : rowAllowed(n)))
+            .map((n) => (n.type === 'section' ? n : asHomeRow(n)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     ), [modules]);
-
-    const otPending = otRecords.filter((r) => r.status === 'pending').length;
-    const todo = [
-        { label: 'Documents to approve', count: docApprovals.length, icon: FactCheckRoundedIcon, color: '#0EA5E9', to: '/dashboard/documents?tab=approvals' },
-        { label: 'Interviews to review', count: interviewReviews.length, icon: WorkOutlineRoundedIcon, color: '#E11D48', to: '/dashboard/recruitment?tab=interviews' },
-        { label: 'Advance requests', count: advanceRequests.length, icon: SavingsRoundedIcon, color: '#F59E0B', to: '/dashboard/pay-adjustments?tab=advances' },
-        { label: 'Overtime to approve', count: otPending, icon: MoreTimeRoundedIcon, color: '#7C5CFC', to: '/dashboard/pay-adjustments?tab=overtime' },
-    ].filter((t) => t.count > 0);
-    const todoCount = todo.reduce((n, t) => n + t.count, 0);
 
     // Auto-open the section that owns the current route.
     React.useEffect(() => {
@@ -252,31 +352,41 @@ export default function DashboardLayout() {
         // The Inbox row carries a live unread count — as a dot when the rail is
         // collapsed, as a number pill when it's expanded.
         const count = item.badge === 'inbox' ? unread : 0;
+        // Rows that deep-link to a tab carry ?tab in their target.
+        const target = item.tabKey ? `${item.to}?tab=${item.tabKey}` : item.to;
+        // Two rows can share a pathname (Attendance/Leave), so key on the
+        // explicit `key` when given — keying on `to` alone would collide.
         return (
-            <NavLink key={item.to} to={item.to} end={item.to === '/dashboard'} style={{ textDecoration: 'none' }} onClick={closeMobile}>
-                {({ isActive }) => (
-                    <Tooltip title={expanded ? '' : `${item.label}${count ? ` (${count})` : ''}`} placement="right" arrow>
-                        <Stack direction="row" spacing={1.5} sx={rowSx(isActive, expanded)}>
-                            <Badge
-                                variant="dot"
-                                invisible={!count || expanded}
-                                sx={{ '& .MuiBadge-badge': { bgcolor: '#E11D48', minWidth: 7, height: 7, top: 3, right: 2 } }}
-                            >
-                                <item.icon sx={{ fontSize: 20, flexShrink: 0, opacity: isActive ? 1 : 0.9 }} />
-                            </Badge>
-                            {expanded && (
-                                <>
-                                    <Typography sx={{ fontSize: 13.5, fontWeight: isActive ? 600 : 500, letterSpacing: '-0.1px', lineHeight: 1.2 }}>{item.label}</Typography>
-                                    {count > 0 && (
-                                        <Box sx={{ ml: 'auto !important', minWidth: 20, height: 18, px: 0.6, borderRadius: '9px', bgcolor: '#E11D48', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{count > 99 ? '99+' : count}</Typography>
-                                        </Box>
-                                    )}
-                                </>
-                            )}
-                        </Stack>
-                    </Tooltip>
-                )}
+            <NavLink key={item.key || target} to={target} end={item.to === '/dashboard'} style={{ textDecoration: 'none' }} onClick={closeMobile}>
+                {({ isActive }) => {
+                    // Two rows share the attendance-leave pathname, so NavLink marks
+                    // both active — pin the highlight to the row that owns the open
+                    // tab ('overview' is the page's default when ?tab is absent).
+                    const active = item.ownTabs ? (isActive && item.ownTabs.includes(activeTab || 'overview')) : isActive;
+                    return (
+                        <Tooltip title={expanded ? '' : `${item.label}${count ? ` (${count})` : ''}`} placement="right" arrow>
+                            <Stack direction="row" spacing={1.5} sx={rowSx(active, expanded)}>
+                                <Badge
+                                    variant="dot"
+                                    invisible={!count || expanded}
+                                    sx={{ '& .MuiBadge-badge': { bgcolor: '#E11D48', minWidth: 7, height: 7, top: 3, right: 2 } }}
+                                >
+                                    <item.icon sx={{ fontSize: 20, flexShrink: 0, opacity: active ? 1 : 0.9 }} />
+                                </Badge>
+                                {expanded && (
+                                    <>
+                                        <Typography sx={{ fontSize: 13.5, fontWeight: active ? 600 : 500, letterSpacing: '-0.1px', lineHeight: 1.2 }}>{item.label}</Typography>
+                                        {count > 0 && (
+                                            <Box sx={{ ml: 'auto !important', minWidth: 20, height: 18, px: 0.6, borderRadius: '9px', bgcolor: '#E11D48', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{count > 99 ? '99+' : count}</Typography>
+                                            </Box>
+                                        )}
+                                    </>
+                                )}
+                            </Stack>
+                        </Tooltip>
+                    );
+                }}
             </NavLink>
         );
     };
@@ -329,84 +439,96 @@ export default function DashboardLayout() {
                 })}
             </Stack>
 
-            {/* ── Footer: what needs doing, and which company you're doing it in ──
-                This is the space the shorter nav frees up. Both blocks are things
-                you want visible at all times rather than buried in a list. */}
+            {/* ── Footer: which company you're working in ─────────────────────
+                One card, not a list of blocks. The entity is the anchor — it's
+                tinted in that entity's own colour so the rail tells you at a
+                glance where you are — and the Master Admin's cross-entity door
+                sits directly above it, inside the same card. */}
             <Box sx={{ flexShrink: 0, borderTop: '1px solid #EDEFF4', p: expanded ? 1.4 : 1, bgcolor: '#FCFCFE' }}>
                 {expanded ? (
-                    <>
-                        {todo.length > 0 && (
-                            <Box sx={{ mb: 1.2 }}>
-                                <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#98A1B2', letterSpacing: '0.09em', textTransform: 'uppercase', px: 0.6, mb: 0.6 }}>
-                                    Needs action
-                                </Typography>
-                                <Stack spacing={0.4}>
-                                    {todo.map((t) => (
-                                        <Stack
-                                            key={t.label}
-                                            direction="row"
-                                            spacing={1}
-                                            onClick={() => { navigate(t.to); closeMobile(); }}
-                                            sx={{
-                                                alignItems: 'center', px: 0.9, py: 0.7, borderRadius: '7px', cursor: 'pointer',
-                                                transition: 'background-color .15s',
-                                                '&:hover': { bgcolor: '#F3F4F8' },
-                                            }}
-                                        >
-                                            <t.icon sx={{ fontSize: 16, color: t.color, flexShrink: 0 }} />
-                                            <Typography sx={{ fontSize: 12, color: '#5B6472', flex: 1, lineHeight: 1.3 }} noWrap>{t.label}</Typography>
-                                            <Box sx={{ minWidth: 19, height: 18, px: 0.6, borderRadius: '9px', bgcolor: t.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{t.count}</Typography>
-                                            </Box>
-                                        </Stack>
-                                    ))}
+                    activeEntity && (
+                        <Box sx={{ borderRadius: '12px', border: '1px solid #EAECF2', bgcolor: '#fff', overflow: 'hidden', boxShadow: '0 1px 3px rgba(16,24,40,0.05)' }}>
+                            {/* Cross-entity overview — the one screen not scoped to the
+                                entity below it, so only a Master Admin gets the door. */}
+                            {isMasterAdmin && (
+                                <Stack
+                                    direction="row"
+                                    spacing={1.1}
+                                    onClick={() => { navigate('/dashboard/master'); closeMobile(); }}
+                                    sx={{
+                                        alignItems: 'center', cursor: 'pointer', px: 1.1, py: 1.15,
+                                        background: isMasterRoute ? GRADIENT : PRIMARY_LIGHT,
+                                        borderBottom: '1px solid #EAECF2',
+                                        transition: 'filter .18s, background .18s',
+                                        '&:hover': { filter: 'brightness(0.97)' },
+                                    }}
+                                >
+                                    <DashboardCustomizeRoundedIcon sx={{ fontSize: 18, flexShrink: 0, color: isMasterRoute ? '#fff' : PRIMARY }} />
+                                    <Typography sx={{ fontSize: 12, fontWeight: 800, flex: 1, color: isMasterRoute ? '#fff' : PRIMARY }} noWrap>All Entities Dashboard</Typography>
+                                    <ArrowForwardRoundedIcon sx={{ fontSize: 15, flexShrink: 0, color: isMasterRoute ? '#fff' : PRIMARY }} />
                                 </Stack>
-                            </Box>
-                        )}
+                            )}
 
-                        {activeEntity && (
                             <Stack
                                 direction="row"
                                 spacing={1.1}
-                                onClick={(e) => setEntityAnchor(e.currentTarget)}
+                                onClick={isMasterAdmin ? (e) => setEntityAnchor(e.currentTarget) : undefined}
                                 sx={{
-                                    alignItems: 'center', cursor: 'pointer', p: 1, borderRadius: '9px',
-                                    border: '1px solid #EAECF2', bgcolor: entityAnchor ? PRIMARY_LIGHT : '#fff',
-                                    transition: 'background-color .18s, border-color .18s',
-                                    '&:hover': { bgcolor: '#F6F5FF', borderColor: '#C9BEFB' },
+                                    alignItems: 'center', cursor: isMasterAdmin ? 'pointer' : 'default', p: 1.1,
+                                    bgcolor: entityAnchor ? `${activeEntity.color}14` : '#fff',
+                                    transition: 'background-color .18s',
+                                    ...(isMasterAdmin && { '&:hover': { bgcolor: `${activeEntity.color}0F` } }),
                                 }}
                             >
-                                <Box sx={{ width: 30, height: 30, borderRadius: '7px', bgcolor: activeEntity.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                    <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{activeEntity.code.slice(0, 3)}</Typography>
+                                <Box sx={{ width: 34, height: 34, borderRadius: '9px', bgcolor: activeEntity.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 3px 8px ${activeEntity.color}55` }}>
+                                    <Typography sx={{ fontSize: 10.5, fontWeight: 800, color: '#fff' }}>{activeEntity.code.slice(0, 3)}</Typography>
                                 </Box>
                                 <Box sx={{ minWidth: 0, flex: 1, lineHeight: 1.25 }}>
                                     <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#98A0AE', textTransform: 'uppercase', letterSpacing: 0.4 }}>Working in</Typography>
-                                    <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#111827' }} noWrap>{activeEntity.name}</Typography>
+                                    <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#111827' }} noWrap>{activeEntity.name}</Typography>
+                                    {activeEntity.city && (
+                                        <Typography sx={{ fontSize: 10.5, color: '#B4BBC6' }} noWrap>{activeEntity.city}</Typography>
+                                    )}
                                 </Box>
-                                <SwapHorizRoundedIcon sx={{ fontSize: 17, color: '#98A0AE', flexShrink: 0 }} />
+                                {/* Only a Master Admin works across entities — everyone else is
+                                    pinned to their own, so the block is a read-only label. */}
+                                {isMasterAdmin && (
+                                    <Box sx={{ width: 26, height: 26, borderRadius: '7px', flexShrink: 0, bgcolor: '#F3F4F8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <SwapHorizRoundedIcon sx={{ fontSize: 16, color: '#5B6472' }} />
+                                    </Box>
+                                )}
                             </Stack>
-                        )}
-                    </>
+                        </Box>
+                    )
                 ) : (
-                    // Collapsed rail: the entity square, with a dot if anything is waiting.
-                    activeEntity && (
-                        <Tooltip placement="right" arrow title={`${activeEntity.name}${todoCount ? ` · ${todoCount} need action` : ''} — click to switch`}>
-                            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                                <Badge
-                                    variant="dot"
-                                    invisible={!todoCount}
-                                    sx={{ '& .MuiBadge-badge': { bgcolor: '#E11D48', minWidth: 8, height: 8 } }}
-                                >
+                    // Collapsed rail: the master-dashboard door (Master Admin only),
+                    // then the entity square.
+                    <>
+                        {isMasterAdmin && (
+                            <Tooltip placement="right" arrow title="All Entities Dashboard">
+                                <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
                                     <Box
-                                        onClick={(e) => setEntityAnchor(e.currentTarget)}
-                                        sx={{ width: 36, height: 36, borderRadius: '9px', bgcolor: activeEntity.color, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                                        onClick={() => { navigate('/dashboard/master'); closeMobile(); }}
+                                        sx={{ width: 36, height: 36, borderRadius: '9px', background: isMasterRoute ? GRADIENT : PRIMARY_LIGHT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', '&:hover': { filter: 'brightness(0.97)' } }}
+                                    >
+                                        <DashboardCustomizeRoundedIcon sx={{ fontSize: 18, color: isMasterRoute ? '#fff' : PRIMARY }} />
+                                    </Box>
+                                </Box>
+                            </Tooltip>
+                        )}
+                        {activeEntity && (
+                            <Tooltip placement="right" arrow title={`${activeEntity.name}${isMasterAdmin ? ' — click to switch' : ''}`}>
+                                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                                    <Box
+                                        onClick={isMasterAdmin ? (e) => setEntityAnchor(e.currentTarget) : undefined}
+                                        sx={{ width: 36, height: 36, borderRadius: '9px', bgcolor: activeEntity.color, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMasterAdmin ? 'pointer' : 'default', boxShadow: `0 3px 8px ${activeEntity.color}55`, ...(isMasterAdmin && { '&:hover': { opacity: 0.88 } }) }}
                                     >
                                         <Typography sx={{ fontSize: 10.5, fontWeight: 800, color: '#fff' }}>{activeEntity.code.slice(0, 3)}</Typography>
                                     </Box>
-                                </Badge>
-                            </Box>
-                        </Tooltip>
-                    )
+                                </Box>
+                            </Tooltip>
+                        )}
+                    </>
                 )}
             </Box>
         </Box>
@@ -435,39 +557,52 @@ export default function DashboardLayout() {
             {/* Entity switcher — anchored to the sidebar footer block */}
             <Menu
                 anchorEl={entityAnchor}
-                open={Boolean(entityAnchor)}
+                open={Boolean(entityAnchor) && isMasterAdmin}
                 onClose={() => setEntityAnchor(null)}
                 anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
                 transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                slotProps={{ paper: { sx: { ml: 1, borderRadius: '12px', minWidth: 258, border: '1px solid #EEF0F5', boxShadow: '0 18px 44px rgba(15,23,42,0.16)' } } }}
-                MenuListProps={{ sx: { p: 1 } }}
+                slotProps={{ paper: { sx: { ml: 1, borderRadius: '14px', minWidth: 266, overflow: 'hidden', bgcolor: '#FBFAFF', border: `1px solid ${PRIMARY}2E`, boxShadow: `0 22px 50px -14px ${PRIMARY}66, 0 8px 24px rgba(15,23,42,0.12)` } } }}
+                MenuListProps={{ sx: { p: 1.1 } }}
             >
-                <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#98A1B2', letterSpacing: '0.08em', textTransform: 'uppercase', px: 1.2, py: 0.8 }}>
-                    Switch entity
-                </Typography>
+                {/* Gradient header — reads clearly against the tinted body */}
+                <Box sx={{ mx: -1.1, mt: -1.1, mb: 1.1, px: 1.8, py: 1.4, background: GRADIENT, color: '#fff' }}>
+                    <Typography sx={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.85 }}>Switch entity</Typography>
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 800, mt: 0.2 }} noWrap>{activeEntity?.name || 'Select an entity'}</Typography>
+                </Box>
                 {entities.map((ent) => {
                     const on = ent.id === activeEntity?.id;
                     return (
                         <MenuItem
                             key={ent.id}
                             onClick={() => { dispatch(setActiveEntity(ent.id)); setEntityAnchor(null); }}
-                            sx={{ borderRadius: '8px', py: 1, px: 1.2, gap: 1.3, '&:hover': { bgcolor: '#F4F5F9' } }}
+                            sx={{
+                                borderRadius: '10px', py: 1, px: 1.1, gap: 1.2, mb: 0.6,
+                                border: '1px solid',
+                                borderColor: on ? `${ent.color}66` : '#ECEBF6',
+                                bgcolor: on ? `${ent.color}16` : '#fff',
+                                transition: 'background-color .15s, border-color .15s, transform .15s',
+                                '&:hover': { bgcolor: on ? `${ent.color}22` : '#F5F3FF', borderColor: on ? `${ent.color}66` : `${PRIMARY}44`, transform: 'translateX(2px)' },
+                            }}
                         >
-                            <Box sx={{ width: 30, height: 30, borderRadius: '7px', bgcolor: ent.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Box sx={{ width: 32, height: 32, borderRadius: '8px', bgcolor: ent.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 3px 8px ${ent.color}55` }}>
                                 <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{ent.code.slice(0, 3)}</Typography>
                             </Box>
                             <Box sx={{ minWidth: 0, flex: 1 }}>
                                 <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }} noWrap>{ent.name}</Typography>
                                 <Typography sx={{ fontSize: 11, color: '#98A0AE' }} noWrap>{ent.city || ent.code}</Typography>
                             </Box>
-                            {on && <CheckRoundedIcon sx={{ fontSize: 18, color: ent.color }} />}
+                            {on && (
+                                <Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: ent.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <CheckRoundedIcon sx={{ fontSize: 14, color: '#fff' }} />
+                                </Box>
+                            )}
                         </MenuItem>
                     );
                 })}
-                <Divider sx={{ borderColor: '#F1F3F7', my: 0.6 }} />
+                <Divider sx={{ borderColor: `${PRIMARY}1F`, my: 0.8 }} />
                 <MenuItem
-                    onClick={() => { setEntityAnchor(null); navigate('/dashboard/organisation?tab=entities'); closeMobile(); }}
-                    sx={{ borderRadius: '8px', py: 1, px: 1.2, gap: 1.5, fontSize: 13, fontWeight: 700, color: PRIMARY, '&:hover': { bgcolor: PRIMARY_LIGHT } }}
+                    onClick={() => { setEntityAnchor(null); navigate('/dashboard/entities'); closeMobile(); }}
+                    sx={{ borderRadius: '10px', py: 1, px: 1.1, gap: 1.3, fontSize: 13, fontWeight: 800, color: PRIMARY, bgcolor: PRIMARY_LIGHT, border: `1px solid ${PRIMARY}26`, '&:hover': { bgcolor: '#E7DFFC' } }}
                 >
                     <ApartmentRoundedIcon sx={{ fontSize: 18 }} />
                     Manage entities
@@ -476,21 +611,36 @@ export default function DashboardLayout() {
 
             {/* Main column */}
             <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <Box sx={{ height: 68, bgcolor: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)', borderBottom: '1px solid #EDEFF4', display: 'flex', alignItems: 'center', px: { xs: 2, md: 3 }, gap: { xs: 1, md: 2 }, position: 'sticky', top: 0, zIndex: 10 }}>
-                    <IconButton onClick={handleMenuClick} size="small" sx={{ color: '#5B6472' }}>
+                <Box sx={{ height: 68, bgcolor: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderBottom: '1px solid #EDEFF4', boxShadow: '0 1px 2px rgba(16,24,40,0.03)', display: 'flex', alignItems: 'center', px: { xs: 2, md: 3 }, gap: { xs: 1, md: 1.5 }, position: 'sticky', top: 0, zIndex: 10 }}>
+                    <IconButton onClick={handleMenuClick} sx={{ color: '#5B6472', border: '1px solid #EAECF2', borderRadius: '11px', width: 42, height: 42, bgcolor: '#fff', transition: 'background-color .18s, border-color .18s, color .18s', '&:hover': { bgcolor: PRIMARY_LIGHT, borderColor: '#C9BEFB', color: PRIMARY } }}>
                         {!isMobile && isExpanded ? <MenuOpenRoundedIcon /> : <MenuRoundedIcon />}
                     </IconButton>
 
-                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: '#F3F4F8', borderRadius: '7px', px: 1.5, height: 42, width: { xs: 0, sm: 300, md: 320 }, display: { xs: 'none', sm: 'flex' }, transition: 'box-shadow .2s', '&:focus-within': { boxShadow: `0 0 0 2px ${PRIMARY_LIGHT}` } }}>
-                        <SearchRoundedIcon sx={{ fontSize: 19, color: '#98A0AE' }} />
-                        <InputBase placeholder="Search employees, payslips…" sx={{ fontSize: 13.5, flex: 1 }} />
-                    </Stack>
+                    {/* Which company you're working in — mirrors the sidebar's
+                        "Working in" selection so the active entity is always visible
+                        in the header. Switching still happens from the sidebar. */}
+                    {activeEntity && (
+                        <Stack direction="row" spacing={1.1} sx={{ alignItems: 'center', bgcolor: '#fff', border: '1px solid #EAECF2', borderRadius: '11px', px: 1.3, height: 42, maxWidth: { sm: 240, md: 300 }, display: { xs: 'none', sm: 'flex' }, transition: 'border-color .18s, box-shadow .18s', '&:hover': { borderColor: '#DDD6FB', boxShadow: `0 3px 10px -2px ${activeEntity.color}22` } }}>
+                            <Box sx={{ width: 30, height: 30, borderRadius: '8px', flexShrink: 0, background: `linear-gradient(140deg, ${activeEntity.color}, ${activeEntity.color}D0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 3px 8px ${activeEntity.color}55` }}>
+                                <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#fff', letterSpacing: 0.3 }}>{(activeEntity.code || activeEntity.name).slice(0, 3).toUpperCase()}</Typography>
+                            </Box>
+                            <Box sx={{ minWidth: 0, lineHeight: 1.15 }}>
+                                <Typography sx={{ fontSize: 8.5, fontWeight: 800, color: '#A9AEC0', textTransform: 'uppercase', letterSpacing: 0.7 }}>Working in</Typography>
+                                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#111827' }} noWrap>{activeEntity.name}</Typography>
+                            </Box>
+                        </Stack>
+                    )}
 
                     <Box sx={{ flexGrow: 1 }} />
 
-                    <IconButton sx={{ display: { xs: 'inline-flex', sm: 'none' }, color: '#5B6472' }}>
-                        <SearchRoundedIcon />
-                    </IconButton>
+                    {/* Compact entity badge on mobile, where the labelled pill won't fit */}
+                    {activeEntity && (
+                        <Tooltip arrow title={`Working in ${activeEntity.name}`}>
+                            <Box sx={{ display: { xs: 'flex', sm: 'none' }, width: 34, height: 34, borderRadius: '9px', bgcolor: activeEntity.color, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{(activeEntity.code || activeEntity.name).slice(0, 3).toUpperCase()}</Typography>
+                            </Box>
+                        </Tooltip>
+                    )}
 
                     {/* Financial year — which reporting period the app is working in */}
                     <Tooltip arrow title={fyConfig ? `Financial year runs ${fyConfig.startMonthName} to ${fyConfig.endMonthName}` : 'No financial year set'}>
@@ -499,8 +649,8 @@ export default function DashboardLayout() {
                             spacing={0.9}
                             onClick={(e) => setFyAnchor(e.currentTarget)}
                             sx={{
-                                alignItems: 'center', cursor: 'pointer', height: 40, px: 1.3,
-                                border: '1px solid', borderRadius: '10px',
+                                alignItems: 'center', cursor: 'pointer', height: 42, px: 1.4,
+                                border: '1px solid', borderRadius: '11px',
                                 borderColor: fyAnchor ? '#C9BEFB' : '#EAECF2',
                                 bgcolor: fyAnchor ? PRIMARY_LIGHT : '#fff',
                                 transition: 'background-color .18s, border-color .18s',
@@ -563,7 +713,7 @@ export default function DashboardLayout() {
 
                         <Divider sx={{ borderColor: '#F1F3F7', my: 0.5 }} />
                         <MenuItem
-                            onClick={() => { setFyAnchor(null); navigate('/dashboard/financial-year'); closeMobile(); }}
+                            onClick={() => { setFyAnchor(null); navigate('/dashboard/settings?tab=financial-year'); closeMobile(); }}
                             sx={{ borderRadius: '8px', py: 1, px: 1.2, gap: 1.5, fontSize: 13, fontWeight: 700, color: PRIMARY, '&:hover': { bgcolor: PRIMARY_LIGHT } }}
                         >
                             <TuneRoundedIcon sx={{ fontSize: 18 }} />
@@ -571,13 +721,17 @@ export default function DashboardLayout() {
                         </MenuItem>
                     </Menu>
 
+                    {/* Divider — groups the reporting-period pill apart from the
+                        personal cluster (inbox · profile · logout). */}
+                    <Divider orientation="vertical" flexItem sx={{ borderColor: '#EAECF2', my: 1.3, display: { xs: 'none', sm: 'block' } }} />
+
                     {/* Inbox */}
                     <Tooltip title={unread ? `${unread} unread message${unread === 1 ? '' : 's'}` : 'Inbox'} arrow>
                         <IconButton
                             onClick={() => navigate('/dashboard/inbox')}
                             sx={{
-                                width: 40, height: 40, color: '#5B6472',
-                                border: '1px solid #EAECF2', borderRadius: '10px', bgcolor: '#fff',
+                                width: 42, height: 42, color: '#5B6472',
+                                border: '1px solid #EAECF2', borderRadius: '11px', bgcolor: '#fff',
                                 transition: 'background-color .18s, border-color .18s',
                                 '&:hover': { bgcolor: PRIMARY_LIGHT, borderColor: '#C9BEFB', color: PRIMARY },
                             }}
@@ -594,11 +748,11 @@ export default function DashboardLayout() {
 
                     <Stack
                         direction="row"
-                        spacing={1.1}
+                        spacing={1}
                         onClick={(e) => setAnchor(e.currentTarget)}
                         sx={{
-                            alignItems: 'center', cursor: 'pointer',
-                            pl: 0.6, pr: { xs: 0.6, md: 1.2 }, py: 0.6,
+                            alignItems: 'center', cursor: 'pointer', height: 42,
+                            pl: 0.5, pr: { xs: 0.5, md: 1.3 },
                             borderRadius: '30px',
                             border: '1px solid #EAECF2',
                             bgcolor: Boolean(anchor) ? '#F1EEFE' : '#fff',
@@ -606,10 +760,10 @@ export default function DashboardLayout() {
                             '&:hover': { bgcolor: '#F6F5FF', borderColor: '#C9BEFB', boxShadow: '0 2px 8px rgba(124,92,252,0.12)' },
                         }}
                     >
-                        <Avatar sx={{ width: 34, height: 34, background: GRADIENT, fontSize: 13, fontWeight: 700 }}>{initials}</Avatar>
-                        <Box sx={{ display: { xs: 'none', md: 'block' }, lineHeight: 1.25 }}>
-                            <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{auth.userName || 'User'}</Typography>
-                            <Typography sx={{ fontSize: 11, color: '#98A0AE', fontWeight: 500 }}>{auth.role || 'Member'}</Typography>
+                        <Avatar sx={{ width: 34, height: 34, background: GRADIENT, fontSize: 13, fontWeight: 700, boxShadow: '0 2px 6px rgba(124,92,252,0.35)' }}>{initials}</Avatar>
+                        <Box sx={{ display: { xs: 'none', md: 'block' }, lineHeight: 1.2 }}>
+                            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#111827' }} noWrap>{auth.userName || 'User'}</Typography>
+                            <Typography sx={{ fontSize: 10.5, color: '#98A0AE', fontWeight: 600 }} noWrap>{auth.role || 'Member'}</Typography>
                         </Box>
                         <KeyboardArrowDownRoundedIcon sx={{ display: { xs: 'none', md: 'block' }, fontSize: 18, color: '#98A0AE', transition: 'transform .2s', transform: Boolean(anchor) ? 'rotate(180deg)' : 'none' }} />
                     </Stack>
@@ -620,43 +774,53 @@ export default function DashboardLayout() {
                         onClose={() => setAnchor(null)}
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                        slotProps={{ paper: { sx: { mt: 1.2, borderRadius: '14px', minWidth: 250, overflow: 'hidden', border: '1px solid #EEF0F5', boxShadow: '0 18px 44px rgba(15,23,42,0.16)' } } }}
-                        MenuListProps={{ sx: { p: 1 } }}
+                        slotProps={{ paper: { sx: { mt: 1.2, borderRadius: '16px', minWidth: 268, overflow: 'hidden', border: '1px solid #EEF0F5', boxShadow: '0 20px 48px -8px rgba(15,23,42,0.22)' } } }}
+                        MenuListProps={{ sx: { p: 0 } }}
                     >
-                        {/* Compact identity row */}
-                        <Stack direction="row" spacing={1.3} sx={{ alignItems: 'center', px: 1.2, py: 1, mb: 0.5 }}>
-                            <Avatar sx={{ width: 40, height: 40, background: GRADIENT, fontSize: 14, fontWeight: 700 }}>{initials}</Avatar>
-                            <Box sx={{ minWidth: 0 }}>
-                                <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }} noWrap>{auth.userName || 'User'}</Typography>
-                                <Typography sx={{ fontSize: 11.5, color: '#8A93A4' }} noWrap>{auth.email || '—'}</Typography>
-                            </Box>
-                        </Stack>
-                        <Divider sx={{ borderColor: '#F1F3F7', mb: 0.5 }} />
+                        {/* Gradient identity card */}
+                        <Box sx={{ background: GRADIENT, px: 2, py: 1.9, color: '#fff', position: 'relative', overflow: 'hidden' }}>
+                            <Box sx={{ position: 'absolute', top: -30, right: -20, width: 110, height: 110, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.10)' }} />
+                            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', position: 'relative' }}>
+                                <Avatar sx={{ width: 48, height: 48, bgcolor: 'rgba(255,255,255,0.22)', color: '#fff', fontSize: 17, fontWeight: 800, border: '2px solid rgba(255,255,255,0.5)' }}>{initials}</Avatar>
+                                <Box sx={{ minWidth: 0 }}>
+                                    <Typography sx={{ fontSize: 15, fontWeight: 800, lineHeight: 1.2 }} noWrap>{auth.userName || 'User'}</Typography>
+                                    <Typography sx={{ fontSize: 11.5, opacity: 0.9 }} noWrap>{auth.email || '—'}</Typography>
+                                    {auth.role && (
+                                        <Box sx={{ mt: 0.5, display: 'inline-flex', alignItems: 'center', px: 0.9, py: 0.2, borderRadius: '6px', bgcolor: 'rgba(255,255,255,0.2)' }}>
+                                            <Typography sx={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase' }}>{auth.role}</Typography>
+                                        </Box>
+                                    )}
+                                </Box>
+                            </Stack>
+                        </Box>
 
-                        {[
-                            { icon: PersonRoundedIcon, label: 'My Profile', onClick: () => setAnchor(null) },
-                            { icon: SettingsRoundedIcon, label: 'Settings', onClick: () => setAnchor(null) },
-                        ].map((it) => (
-                            <MenuItem key={it.label} onClick={it.onClick} sx={{ borderRadius: '8px', py: 1.05, px: 1.2, gap: 1.5, fontSize: 13.5, fontWeight: 600, color: '#334155', '&:hover': { bgcolor: '#F4F5F9' } }}>
-                                <it.icon sx={{ fontSize: 19, color: '#5B6472' }} />
-                                {it.label}
+                        {/* Actions */}
+                        <Box sx={{ p: 1 }}>
+                            {[
+                                { icon: PersonRoundedIcon, label: 'My Profile', onClick: () => setAnchor(null) },
+                                { icon: SettingsRoundedIcon, label: 'Settings', onClick: () => { setAnchor(null); navigate('/dashboard/settings'); closeMobile(); } },
+                            ].map((it) => (
+                                <MenuItem key={it.label} onClick={it.onClick} sx={{ borderRadius: '10px', py: 0.9, px: 1, gap: 1.3, fontSize: 13.5, fontWeight: 700, color: '#334155', '&:hover': { bgcolor: PRIMARY_LIGHT, color: PRIMARY, '& .act-ico': { bgcolor: '#fff', color: PRIMARY } } }}>
+                                    <Box className="act-ico" sx={{ width: 32, height: 32, borderRadius: '9px', bgcolor: '#F4F5F9', color: '#5B6472', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color .15s, color .15s' }}>
+                                        <it.icon sx={{ fontSize: 18 }} />
+                                    </Box>
+                                    {it.label}
+                                </MenuItem>
+                            ))}
+
+                            <Divider sx={{ borderColor: '#F1F3F7', my: 0.7 }} />
+
+                            <MenuItem
+                                onClick={() => { setAnchor(null); setLogoutConfirm(true); }}
+                                sx={{ borderRadius: '10px', py: 0.9, px: 1, gap: 1.3, fontSize: 13.5, fontWeight: 700, color: '#DC2626', '&:hover': { bgcolor: '#FEF2F2', '& .act-ico': { bgcolor: '#fff' } } }}
+                            >
+                                <Box className="act-ico" sx={{ width: 32, height: 32, borderRadius: '9px', bgcolor: '#FEE2E2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color .15s' }}>
+                                    <PowerSettingsNewRoundedIcon sx={{ fontSize: 18 }} />
+                                </Box>
+                                Log out
                             </MenuItem>
-                        ))}
+                        </Box>
                     </Menu>
-
-                    <Tooltip title="Log out" arrow>
-                        <IconButton
-                            onClick={() => setLogoutConfirm(true)}
-                            sx={{
-                                width: 40, height: 40, color: '#DC2626',
-                                border: '1px solid #EAECF2', borderRadius: '10px', bgcolor: '#fff',
-                                transition: 'background-color .18s, border-color .18s',
-                                '&:hover': { bgcolor: '#FEF2F2', borderColor: '#FECACA' },
-                            }}
-                        >
-                            <PowerSettingsNewRoundedIcon sx={{ fontSize: 19 }} />
-                        </IconButton>
-                    </Tooltip>
                 </Box>
 
                 <Box sx={{ bgcolor: '#F6F7FF', flexGrow: 1, overflow: 'auto' }}>
@@ -680,7 +844,14 @@ export default function DashboardLayout() {
                             ))}
                         </Breadcrumbs>
                     </Box>
-                    <Outlet />
+                    {/* Re-key on the active entity so switching companies in the
+                        sidebar remounts the current page — its load effects run
+                        again and the screen shows the new entity's data instead of
+                        the one it first mounted with. `display: contents` keeps the
+                        wrapper out of the layout. */}
+                    <Box key={`entity-${activeEntityId}`} sx={{ display: 'contents' }}>
+                        <Outlet />
+                    </Box>
                 </Box>
             </Box>
 
@@ -722,6 +893,10 @@ export default function DashboardLayout() {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* New-entity onboarding gate — checklist for admins, block for others,
+                until the active entity's required setup is complete. */}
+            <EntitySetupGate />
         </Box>
     );
 }

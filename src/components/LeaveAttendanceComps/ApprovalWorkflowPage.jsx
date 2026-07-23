@@ -21,9 +21,8 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
 import http from '../../Api/http';
-import { leaveApprovalStatusCheck, updateLeaveApprovalAction } from '../../Api/Api';
+import { GetLeaveApprovalStatusCheck, updateLeaveApprovalAction } from '../../Api/Api';
 import useFinancialYear from '../../hooks/useFinancialYear';
 import SnackBar from '../SnackBar';
 
@@ -90,8 +89,6 @@ const QUICK_REJECT_REASONS = [
 
 export default function ApprovalWorkflowPage({ isEmbedded = false }) {
     const navigate = useNavigate();
-    const user = useSelector((state) => state.auth);
-    const rollNumber = user?.rollNumber;
     const financialYear = useFinancialYear();
 
     // ─── State ──────────────────────────────────────────────────────────────
@@ -119,23 +116,16 @@ export default function ApprovalWorkflowPage({ isEmbedded = false }) {
     // leave is approved or rejected the API filters it out, so we drop the
     // row from local state on action to keep the UI in sync without refetch.
     const fetchLeaves = async () => {
-        if (!rollNumber || !financialYear) return;
+        if (!financialYear) return;
         setIsFetching(true);
         try {
-            // `AcademicYear` is still the field name on this legacy endpoint; the
-            // value is the company's financial year.
-            const res = await http.get(leaveApprovalStatusCheck, {
-                params: {
-                    AcademicYear: financialYear,
-                    RollNumber:   rollNumber,
-                    Status:       'Requested',
-                },
+            // GET /Leave/GetLeaveApprovalStatusCheck?financialYear=YYYY-YYYY
+            // Returns every leave still "Requested" — the whole approval queue.
+            const res = await http.get(GetLeaveApprovalStatusCheck, {
+                params: { financialYear },
             });
-            if (res?.data?.success) {
-                setLeaves(Array.isArray(res.data.leaves) ? res.data.leaves : []);
-            } else {
-                setLeaves([]);
-            }
+            const data = res?.data || {};
+            setLeaves(!data.error && Array.isArray(data.leaves) ? data.leaves : []);
         } catch (error) {
             console.error('Error fetching leave approval status:', error);
             setLeaves([]);
@@ -148,7 +138,7 @@ export default function ApprovalWorkflowPage({ isEmbedded = false }) {
     useEffect(() => {
         fetchLeaves();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rollNumber, financialYear]);
+    }, [financialYear]);
 
     // ─── Filter (search across name, leave type, reason, roll number) ─────
     const q = search.trim().toLowerCase();
@@ -163,23 +153,16 @@ export default function ApprovalWorkflowPage({ isEmbedded = false }) {
     }, [leaves, q]);
 
     // ─── Action handler ────────────────────────────────────────────────────
-    // PUT updateLeaveApprovalAction
-    //   ?AcademicYear=YYYY-YYYY&leaveApplicationId=<id>&RollNumber=<approver>
-    //   &Action=accept|decline&Reason=<text>
-    // The `Reason` param is always sent (empty string when accepting) so the
-    // URL shape matches the backend contract exactly.
+    // PUT /Leave/UpdateLeaveApprovalAction
+    //   ?leaveApplicationId=<id>&financialYear=YYYY-YYYY&action=accept|decline
+    //   &reason=<text>   (reason sent only when declining)
     const handleDecision = async (leave, decision, reason = '') => {
         const id = leave.leaveApplicationId;
         const action = decision === 'approved' ? 'accept' : 'decline';
         setActionLoading(prev => ({ ...prev, [id]: true }));
         try {
-            const params = {
-                AcademicYear: financialYear,
-                leaveApplicationId: id,
-                RollNumber: rollNumber,
-                Action: action,
-                Reason: action === 'decline' ? (reason || '').trim() : '',
-            };
+            const params = { leaveApplicationId: id, financialYear, action };
+            if (action === 'decline') params.reason = (reason || '').trim();
             const res = await http.put(updateLeaveApprovalAction, null, {
                 params,
             });

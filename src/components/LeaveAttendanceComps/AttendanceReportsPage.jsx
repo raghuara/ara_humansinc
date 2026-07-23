@@ -66,13 +66,6 @@ const mapCategory = (cat = '') => {
     return cat;
 };
 
-const mapCategoryToApi = (display) => {
-    if (display === 'Teaching Staff')     return 'teaching';
-    if (display === 'Non Teaching Staff') return 'nonteaching';
-    if (display === 'Supporting Staff')   return 'supporting';
-    return '';
-};
-
 const normalizeStatus = (status = '') => {
     const s = String(status).toLowerCase().trim();
     if (s === 'present') return 'Present';
@@ -152,29 +145,38 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
     const presets = buildPresets();
 
     // ── Fetch summary ──────────────────────────────────────────────────────
-    // GET /reportsLeaveManagement
-    //   ?FromDate=YYYY-MM-DD&ToDate=YYYY-MM-DD&Category=<cat>&AttendanceStatus=<status>
-    // Dates are sent in the same YYYY-MM-DD format the <input type="date">
-    // already produces — no DD-MM-YYYY conversion.
+    // GET /Reports/GetReportsLeaveManagement?fromDate=DD-MM-YYYY&toDate=DD-MM-YYYY
+    // Response: { cards: { totalEmployees, presentDays, lateArrivals, absentDays,
+    //   leaveDays }, summary: [{ sNo, employee, employeeCode, department,
+    //   workingDays, present, late, absent, leave, attendancePercent }] }.
+    // Category/status are filtered client-side now — the endpoint only takes a
+    // date range.
     const fetchReports = useCallback(async () => {
         setIsLoading(true);
         try {
             const res = await http.get(reportsLeaveManagement, {
                 params: {
-                    FromDate:         fromDate,
-                    ToDate:           toDate,
-                    Category:         mapCategoryToApi(categoryFilter === 'all' ? '' : categoryFilter),
-                    AttendanceStatus: statusFilter !== 'all' ? statusFilter : '',
+                    fromDate: inputToApi(fromDate),   // DD-MM-YYYY
+                    toDate:   inputToApi(toDate),
                 },
             });
             if (res.data && !res.data.error) {
-                setCards(res.data.cards || {});
-                // The new API returns `rollNumber`; older shape used `staffId`.
-                // Normalize so the rest of the page can keep reading row.staffId.
+                const c = res.data.cards || {};
+                setCards({
+                    totalStaff:   c.totalEmployees ?? c.totalStaff ?? 0,
+                    presentDays:  c.presentDays  ?? 0,
+                    lateArrivals: c.lateArrivals ?? 0,
+                    absentDays:   c.absentDays   ?? 0,
+                    leaveDays:    c.leaveDays    ?? 0,
+                });
+                // Map the API's employee/employeeCode/department onto the field
+                // names the table + export already read.
                 const list = Array.isArray(res.data.summary) ? res.data.summary : [];
                 setSummary(list.map(r => ({
                     ...r,
-                    staffId: r.staffId || r.rollNumber || '',
+                    staffMember: r.employee ?? r.staffMember ?? '',
+                    staffId:     r.employeeCode ?? r.staffId ?? r.rollNumber ?? '',
+                    category:    r.department ?? r.category ?? '',
                 })));
             } else {
                 showSnack(res.data?.message || 'Failed to load reports', false);
@@ -185,25 +187,25 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
         } finally {
             setIsLoading(false);
         }
-    }, [fromDate, toDate, categoryFilter, statusFilter]);
+    }, [fromDate, toDate]);
 
     useEffect(() => { fetchReports(); }, [fetchReports]);
 
     // ── Full report ────────────────────────────────────────────────────────
-    // GET /reportsLeaveManagementFullReport
-    //   ?RollNumber=<roll>&FromDate=YYYY-MM-DD&ToDate=YYYY-MM-DD
+    // GET /Reports/GetReportsLeaveManagementFullReport
+    //   ?employeeCode=<code>&fromDate=DD-MM-YYYY&toDate=DD-MM-YYYY
     // The dialog stays open in three states:
     //   isLoading: true                → spinner
     //   data: { ...record, hasData }   → full report
     //   data: { empty: true, message } → friendly "no data" view (no toast)
     const fetchFullReport = async (staffId) => {
-        // Don't fire the request when the row had no roll number — skip
+        // Don't fire the request when the row had no employee code — skip
         // straight to the empty state. Saves a guaranteed-to-fail round-trip.
         if (!staffId || String(staffId).trim().length === 0) {
             setReportDialog({
                 open: true,
                 isLoading: false,
-                data: { empty: true, message: 'This staff member has no roll number on file.' },
+                data: { empty: true, message: 'This staff member has no employee code on file.' },
             });
             return;
         }
@@ -212,9 +214,9 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
         try {
             const res = await http.get(reportsLeaveManagementFullReport, {
                 params: {
-                    RollNumber: staffId,
-                    FromDate:   fromDate,
-                    ToDate:     toDate,
+                    employeeCode: staffId,
+                    fromDate:     inputToApi(fromDate),   // DD-MM-YYYY
+                    toDate:       inputToApi(toDate),
                 },
             });
             const body = res?.data || {};
@@ -236,11 +238,17 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
                 return;
             }
 
-            // Normalize so the dialog can keep reading fullData.staffId.
+            // Normalize onto the field names the dialog reads: `staffId` for the
+            // code, and `category` for the chip (designation reads best there,
+            // since the department is already shown beside it).
             setReportDialog({
                 open: true,
                 isLoading: false,
-                data: { ...body, staffId: body.staffId || body.rollNumber || staffId },
+                data: {
+                    ...body,
+                    staffId: body.employeeCode || body.staffId || staffId,
+                    category: body.designation || body.department || '',
+                },
             });
         } catch (err) {
             console.error('Full report fetch error:', err);
@@ -274,25 +282,33 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
         setStaffSearch('');
     };
 
-    // Client-side search on fetched summary
-    const filteredSummary = staffSearch.trim()
-        ? summary.filter(row =>
-            (row.staffMember || '').toLowerCase().includes(staffSearch.toLowerCase()) ||
-            String(row.staffId || '').toLowerCase().includes(staffSearch.toLowerCase())
-          )
-        : summary;
-
     const searchActive = staffSearch.trim().length > 0;
     const categoryActive = categoryFilter !== 'all';
     const statusActive   = statusFilter   !== 'all';
     const anyFilterActive = searchActive || categoryActive || statusActive;
+
+    // All three filters are client-side — the summary endpoint only takes a
+    // date range. "Category" filters by department; "Status" keeps rows that
+    // had at least one day of the chosen status.
+    const STATUS_FIELD = { Present: 'present', Late: 'late', Absent: 'absent', Leave: 'leave' };
+    const q = staffSearch.trim().toLowerCase();
+    const filteredSummary = summary.filter(row => {
+        if (q && !((row.staffMember || '').toLowerCase().includes(q)
+            || String(row.staffId || '').toLowerCase().includes(q))) return false;
+        if (categoryActive && row.category !== categoryFilter) return false;
+        if (statusActive) {
+            const f = STATUS_FIELD[statusFilter];
+            if (f && !(Number(row[f]) > 0)) return false;
+        }
+        return true;
+    });
 
     const activeCategoryColor = (CATEGORY_STYLE[categoryFilter]?.color) || '#6B7280';
     const activeStatusColor   = (STATUS_STYLE[statusFilter]?.color)   || '#6B7280';
 
     // ── Export ─────────────────────────────────────────────────────────────
     const handleExportSummary = () => {
-        const headers = ['S.No', 'Staff Name', 'Staff ID', 'Category', 'Working Days', 'Present', 'Late', 'Absent', 'Leave', 'Attendance %'];
+        const headers = ['S.No', 'Staff Name', 'Employee Code', 'Department', 'Working Days', 'Present', 'Late', 'Absent', 'Leave', 'Attendance %'];
         const rows = filteredSummary.map((row, idx) => [
             idx + 1, row.staffMember, row.staffId, mapCategory(row.category),
             row.workingDays, row.present, row.late, row.absent, row.leave, `${row.attendancePercent}%`,
@@ -400,9 +416,12 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
         </Menu>
     );
 
+    // Department options come from the data, so the filter always matches what
+    // the API actually returned.
+    const departmentOptions = Array.from(new Set(summary.map(r => r.category).filter(Boolean)));
     const categoryItems = [
-        { key: 'all', label: 'All Categories' },
-        ...Object.keys(CATEGORY_STYLE).map(k => ({ key: k, label: k })),
+        { key: 'all', label: 'All Departments' },
+        ...departmentOptions.map(d => ({ key: d, label: d })),
     ];
     const statusItems = [
         { key: 'all', label: 'All Status' },
@@ -543,7 +562,7 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
                                 endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 16 }} />}
                                 sx={filterButtonSx(categoryActive, activeCategoryColor)}
                             >
-                                {categoryActive ? categoryFilter : 'Category'}
+                                {categoryActive ? categoryFilter : 'Department'}
                             </Button>
                             {renderFilterMenu(
                                 categoryAnchor, setCategoryAnchor,
@@ -675,7 +694,7 @@ export default function AttendanceReportsPage({ isEmbedded = false }) {
                             <Table size="small">
                                 <TableHead>
                                     <TableRow sx={{ bgcolor: PRIMARY_LIGHT, borderBottom: `1px solid ${PRIMARY_BORDER}` }}>
-                                        {['S.No', 'Staff Member', 'Category', 'Working', 'Present', 'Late', 'Absent', 'Leave', 'Attendance %', 'Action'].map(h => (
+                                        {['S.No', 'Staff Member', 'Department', 'Working', 'Present', 'Late', 'Absent', 'Leave', 'Attendance %', 'Action'].map(h => (
                                             <TableCell key={h} sx={{
                                                 fontWeight: 700, fontSize: '10px', color: PRIMARY_DARK,
                                                 textTransform: 'uppercase', whiteSpace: 'nowrap',

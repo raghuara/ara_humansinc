@@ -24,7 +24,7 @@ import { selectWebsiteSettings } from '../../../redux/slices/websiteSettingsSlic
 import * as XLSX from 'xlsx';
 import http from '../../../Api/http';
 import SnackBar from '../../SnackBar';
-import { employeeBankDetailsDashboard, updateEmployeeBankDetailsByRollnumber } from '../../../Api/Api';
+import { employeeBankDetailsDashboard, updateEmployeeBankDetailsByEmployeeCode } from '../../../Api/Api';
 
 // ─── Theme (matches Salary Structures / LeaveAttendancePage) ───────────────
 const PRIMARY = '#7C5CFC';
@@ -87,7 +87,12 @@ export default function BankReports() {
                     totalAccounts: d.totalAccounts,
                     totalNetSalary: d.totalNetSalary,
                 });
-                setEmployeeData(d.employees);
+                // Rows are keyed by employeeCode; alias to rollNumber so the
+                // table, search, export and save keep reading one field.
+                setEmployeeData((d.employees || []).map(emp => ({
+                    ...emp,
+                    rollNumber: emp.employeeCode ?? emp.rollNumber ?? '',
+                })));
             }
         } catch {
             showSnack('Failed to load bank details', false);
@@ -147,20 +152,21 @@ export default function BankReports() {
         }
         setIsSaving(true);
         try {
+            // PUT /Payroll/UpdateEmployeeBankDetailsByEmployeeCode
             const body = {
-                rollNumber: selectedEmployee.rollNumber,
-                bankName: bankDetails.bankName,
-                accountNumber: bankDetails.accountNumber,
-                ifsc: bankDetails.ifscCode,
-                branch: bankDetails.branchName,
+                EmployeeCode:  selectedEmployee.employeeCode || selectedEmployee.rollNumber,
+                BankName:      bankDetails.bankName,
+                AccountNumber: bankDetails.accountNumber,
+                IFSC:          bankDetails.ifscCode,
+                Branch:        bankDetails.branchName,
             };
-            const res = await http.put(updateEmployeeBankDetailsByRollnumber, body);
+            const res = await http.put(updateEmployeeBankDetailsByEmployeeCode, body);
             if (!res.data.error) {
                 showSnack(isAddMode ? 'Bank details added successfully!' : 'Bank details updated successfully!', true);
                 setOpenDialog(false);
                 setEmployeeData(employeeData.map(emp =>
                     emp.id === selectedEmployee.id
-                        ? { ...emp, bankName: body.bankName, accountNumber: body.accountNumber, ifsc: body.ifsc, branch: body.branch }
+                        ? { ...emp, bankName: body.BankName, accountNumber: body.AccountNumber, ifsc: body.IFSC, branch: body.Branch }
                         : emp
                 ));
             } else {

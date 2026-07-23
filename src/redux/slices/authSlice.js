@@ -1,4 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { resolveModules } from '../../data/roleAccess';
 
 // ── Auth ────────────────────────────────────────────────────────────────────
 // Holds everything PostLogin hands back: the JWT, its refresh token, both
@@ -19,7 +20,7 @@ const EMPTY = {
     expiresOn: null,
     refreshTokenExpiresOn: null,
     isAuthenticated: false,
-    user: null,          // { id, name, loginId, userTypeId, role, accentColour }
+    user: null,          // { id, name, loginId, email, userTypeId, role, accentColour, entityId, entityName, isMasterAdmin }
     modules: [],         // module keys the API says this login can reach
     remember: true,
 
@@ -95,7 +96,7 @@ const authSlice = createSlice({
                 remember: remember !== false,
 
                 userName: user?.name || user?.loginId || '',
-                email: user?.loginId || '',
+                email: user?.email || user?.loginId || '',
                 role: user?.role || '',
                 organisation: 'ARA HumanSync',
             };
@@ -128,6 +129,36 @@ export const selectToken = (s) => s.auth.token;
 export const selectUser = (s) => s.auth.user;
 export const selectModules = (s) => s.auth.modules;
 export const selectIsAuthenticated = (s) => s.auth.isAuthenticated;
+
+// The screens this login may open, AFTER the role rules are applied. Built-in
+// roles (userTypeId 1/2/3) resolve to their hard-coded set; any custom role
+// resolves to the server's `modules` list. Gate the sidebar, the route guard
+// and the in-page tabs on THIS, not on the raw `modules`, so all three agree.
+// Returns a stable reference per role (see resolveModules) — safe for useSelector.
+export const selectEffectiveModules = (s) => resolveModules(s.auth.user, s.auth.modules);
+
+// ── Roles ─────────────────────────────────────────────────────────────────────
+// Three default system role types. Custom sub-roles can be added later, but the
+// access rules below key off these three. Gate UI/actions with the selectors so
+// a single source decides who can do what:
+//   MASTER_ADMIN (1) → creates entities, sees & works across ALL of them
+//   ADMIN        (2) → scoped to their own entity (user.entityId); full control there
+//   EMPLOYEE     (3) → self-service only
+export const USER_TYPE = { MASTER_ADMIN: 1, ADMIN: 2, EMPLOYEE: 3 };
+
+export const selectUserTypeId = (s) => s.auth.user?.userTypeId ?? null;
+export const selectIsMasterAdmin = (s) => s.auth.user?.userTypeId === USER_TYPE.MASTER_ADMIN || s.auth.user?.isMasterAdmin === true;
+export const selectIsAdmin = (s) => s.auth.user?.userTypeId === USER_TYPE.ADMIN;
+export const selectIsEmployee = (s) => s.auth.user?.userTypeId === USER_TYPE.EMPLOYEE;
+
+// The entity an Admin/Employee is bound to. Master Admin is `null` — i.e. "all
+// entities", which is why the login sends entityId: "all" for them.
+export const selectUserEntityId = (s) => s.auth.user?.entityId ?? null;
+export const selectUserEntityName = (s) => s.auth.user?.entityName ?? null;
+
+// Master Admin is the only role that may pick across entities; everyone else is
+// pinned to their own. Handy for the Entity picker and the "All Entities" option.
+export const selectCanViewAllEntities = (s) => selectIsMasterAdmin(s);
 
 // Does the server's module list grant this key? An empty list is read as
 // "the server didn't gate anything" rather than "block everything" — locking

@@ -11,9 +11,9 @@ import BankReports from '../components/LeaveAttendanceComps/PayrollComps/BankRep
 // Keeping them out of the monthly Payroll flow is what stops that section from
 // burying Run Payroll under things you never click.
 const TABS = [
-    { key: 'structures', label: 'Salary Structures', icon: RequestQuoteRoundedIcon, render: () => <SalaryStructures /> },
-    { key: 'statutory', label: 'Statutory Deductions', icon: VerifiedUserRoundedIcon, render: () => <ComplianceSettings /> },
-    { key: 'bank', label: 'Bank Details', icon: AccountBalanceWalletRoundedIcon, render: () => <BankReports /> },
+    { key: 'structures', label: 'Salary Structures', icon: RequestQuoteRoundedIcon, module: 'salary-structures', render: () => <SalaryStructures /> },
+    { key: 'statutory', label: 'Statutory Deductions', icon: VerifiedUserRoundedIcon, module: 'statutory-deductions', render: () => <ComplianceSettings /> },
+    { key: 'bank', label: 'Bank Details', icon: AccountBalanceWalletRoundedIcon, module: 'bank-details', render: () => <BankReports /> },
 ];
 
 export default function PayrollSetupPage() {

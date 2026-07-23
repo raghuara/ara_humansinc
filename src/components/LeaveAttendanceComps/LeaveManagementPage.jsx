@@ -102,8 +102,13 @@ export default function LeaveManagementPage({
 }) {
     const user = useSelector((state) => state.auth);
     const userType = user.userType;
-    const isAdmin = userType === 'superadmin' || userType === 'admin';
-    const isSuperAdmin = userType === 'superadmin';
+    // PostLogin gives us `role` ("Administrator"), not `userType`, so admin
+    // status is derived from either — otherwise the Leave Approval tab would
+    // never show. "Super Admin" leaves are auto-approved; a plain Administrator
+    // still reviews others' requests.
+    const role = (user.role || '').toLowerCase();
+    const isSuperAdmin = userType === 'superadmin' || role.includes('super');
+    const isAdmin = isSuperAdmin || userType === 'admin' || role.includes('admin');
 
     // ─── Sub-view (Applications / Apply Leave / Leave Approval) ──────────────
     const [subView, setSubViewState] = useState(initialSubView);
@@ -147,25 +152,24 @@ export default function LeaveManagementPage({
     const [isFetchingLeaveTypes, setIsFetchingLeaveTypes] = useState(false);
 
     // ─── Fetch (Leave Approval Dashboard) ────────────────────────────────────
-    // GET /getLeaveApprovalDashboard?RollNumber=...&AcademicYear=YYYY-YYYY
+    // GET /Leave/GetLeaveApprovalDashboard?financialYear=YYYY-YYYY
     // Response shape:
     //   { error, cards: { pendingCount, approvedCount, rejectedCount },
     //     pending: [...], approved: [...], rejected: [...] }
+    // Each row: { leaveApplicationId, employeeCode, name, leaveType, fromDate,
+    //   toDate, days, reason, appliedOn, status, rejectReason }.
     // We normalize the API's three buckets into the page's existing state shape:
     //   applications: { allLeaves, pendingApproval, approved, rejected }
     // and synthesise the KPI cards (totalLeavesThisMonth + approvedPercentOfTotal)
     // that the existing UI expects.
-    const rollNumber = user?.rollNumber;
     const financialYear = useFinancialYear();
 
     const fetchDashboard = async () => {
-        if (!rollNumber || !financialYear) return;
+        if (!financialYear) return;
         setIsFetching(true);
         try {
-            // `AcademicYear` is still the field name on this legacy endpoint; the
-            // value is the company's financial year.
             const res = await http.get(getLeaveApprovalDashboard, {
-                params: { RollNumber: rollNumber, AcademicYear: financialYear },
+                params: { financialYear },
             });
             const body = res?.data;
             if (!body || body.error) {
@@ -182,9 +186,14 @@ export default function LeaveManagementPage({
             const approved  = Array.isArray(body.approved) ? body.approved : [];
             const rejected  = Array.isArray(body.rejected) ? body.rejected : [];
 
-            // Make sure each row carries a normalized `status` so the existing
-            // chip renderer picks the right colour even if the API omits it.
-            const stamp = (rows, status) => rows.map(r => ({ ...r, status: normalizeLeaveStatus(r.status) || status }));
+            // Normalize `status` (so the chip renderer picks the right colour)
+            // and alias `employeeCode` → `forRollNumber`, which the table's
+            // sub-label and the search box already read.
+            const stamp = (rows, status) => rows.map(r => ({
+                ...r,
+                status: normalizeLeaveStatus(r.status) || status,
+                forRollNumber: r.forRollNumber ?? r.employeeCode ?? '',
+            }));
             const pendingRows  = stamp(pending,  'Pending');
             const approvedRows = stamp(approved, 'Approved');
             const rejectedRows = stamp(rejected, 'Rejected');
@@ -254,9 +263,9 @@ export default function LeaveManagementPage({
     }, [financialYear]);
 
     useEffect(() => {
-        if (rollNumber) fetchDashboard();
+        fetchDashboard();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rollNumber, financialYear]);
+    }, [financialYear]);
 
     // ─── Derived data ───────────────────────────────────────────────────────
     const stats = dashboardData.cards;

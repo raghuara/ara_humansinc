@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Box, Typography, Grid, Button, Stack, Chip, Snackbar, Alert, Skeleton,
-    CircularProgress, Tooltip,
+    CircularProgress,
 } from '@mui/material';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
@@ -24,7 +24,7 @@ const PRIMARY_BORDER = '#C9BEFB';
 const card = { bgcolor: '#fff', border: '1px solid #E6EAF1', borderRadius: '7px', boxShadow: '0 1px 3px rgba(16,24,40,0.06)' };
 const solidBtn = { bgcolor: PRIMARY, color: '#fff', fontWeight: 700, borderRadius: '7px', textTransform: 'none', boxShadow: 'none', '&:hover': { bgcolor: '#6246E0', boxShadow: 'none' }, '&.Mui-disabled': { bgcolor: '#E2E8F0', color: '#94A3B8' } };
 
-// End month is start - 1, wrapped: April (4) → March (3); January (1) → December (12).
+// End month is start - 1, wrapped: April (4) -> March (3); January (1) -> December (12).
 const endMonthFor = (start) => (Number(start) === 1 ? 12 : Number(start) - 1);
 
 // Which financial year today falls in, given a start month. Shown as a preview
@@ -58,7 +58,16 @@ export default function FinancialYearPage() {
             dispatch(setFinancialYearConfig(cfg));
             if (cfg?.startMonth) setStartMonth(Number(cfg.startMonth));
         } catch (err) {
-            setLoadError(err?.response || err?.request ? apiErrorMessage(err, 'Could not load the financial year.') : err.message);
+            // 404 = this entity hasn't set its financial year yet. That's the
+            // normal starting state (every new entity begins here), NOT an error —
+            // clear any stale config so the picker shows and it can be set.
+            if (err?.response?.status === 404) {
+                dispatch(setFinancialYearConfig(null));
+                setStartMonth(4);
+                setLoadError('');
+            } else {
+                setLoadError(err?.response || err?.request ? apiErrorMessage(err, 'Could not load the financial year.') : err.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -68,7 +77,6 @@ export default function FinancialYearPage() {
 
     const locked = Boolean(config?.isLocked);
     const configured = Boolean(config?.startMonth);
-    const dirty = configured ? Number(config.startMonth) !== Number(startMonth) : true;
 
     const save = async () => {
         setSaving(true);
@@ -77,7 +85,8 @@ export default function FinancialYearPage() {
             if (body?.error) throw new Error(body.message || 'Could not save the financial year.');
             // The response is the new config — trust it over anything computed here.
             dispatch(setFinancialYearConfig(body?.data || null));
-            notify('Financial year saved');
+            if (body?.data?.startMonth) setStartMonth(Number(body.data.startMonth));
+            notify('Financial year set.');
         } catch (err) {
             notify(err?.response || err?.request ? apiErrorMessage(err, 'Could not save the financial year.') : err.message, 'error');
         } finally {
@@ -104,6 +113,8 @@ export default function FinancialYearPage() {
                 </Stack>
             )}
 
+            {/* Only a REAL failure (network / 500) lands here. A 404 "not configured
+                yet" is handled in load() as the normal unset state, not an error. */}
             {!loading && loadError && (
                 <Stack direction="row" spacing={1.3} sx={{ alignItems: 'center', ...card, p: 2.2, bgcolor: '#FEF2F2', border: '1px solid #FECACA' }}>
                     <ErrorOutlineRoundedIcon sx={{ fontSize: 22, color: '#B91C1C' }} />
@@ -117,7 +128,7 @@ export default function FinancialYearPage() {
 
             {!loading && !loadError && (
                 <Stack spacing={1.5}>
-                    {/* Current period */}
+                    {/* Current period, or the "not set yet" prompt */}
                     <Box sx={{ ...card, p: 2.5, bgcolor: configured ? PRIMARY_LIGHT : '#fff', border: `1px solid ${configured ? PRIMARY_BORDER : '#E6EAF1'}` }}>
                         {configured ? (
                             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}>
@@ -159,83 +170,79 @@ export default function FinancialYearPage() {
                         )}
                     </Box>
 
-                    {/* Locked notice */}
-                    {locked && (
+                    {/* Once set, the financial year is fixed: it anchors every leave
+                        balance and payroll cycle for the entity, and the API rejects a
+                        second write (409). So the month picker only shows while it is
+                        still unset; after that it becomes a read-only notice. */}
+                    {configured ? (
                         <Stack direction="row" spacing={1.3} sx={{ alignItems: 'center', ...card, p: 1.8, bgcolor: '#EEF2FF', border: '1px solid #DDE0FB' }}>
                             <Box sx={{ width: 34, height: 34, borderRadius: '8px', bgcolor: '#fff', border: '1px solid #DDE0FB', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 <LockRoundedIcon sx={{ fontSize: 18, color: '#4F46E5' }} />
                             </Box>
                             <Box>
-                                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#3730A3' }}>This financial year is locked</Typography>
+                                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#3730A3' }}>The financial year is set and can&apos;t be changed</Typography>
                                 <Typography sx={{ fontSize: 12, color: '#4F46E5' }}>
-                                    Payroll has already run against it, so the start month can no longer be changed — moving it would re-date periods that are already closed.
+                                    {locked
+                                        ? 'Payroll has already run against it, so the start month is frozen — moving it would re-date periods that are already closed.'
+                                        : 'It is a one-time setting per entity: every leave balance and payroll cycle is keyed to this window, so it cannot be re-pointed later.'}
                                 </Typography>
                             </Box>
                         </Stack>
-                    )}
+                    ) : (
+                        <Box sx={{ ...card, p: 0 }}>
+                            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 1.8, borderBottom: '1px solid #F1F3F7', flexWrap: 'wrap', gap: 1 }}>
+                                <Box>
+                                    <Typography sx={{ fontSize: 14.5, fontWeight: 800, color: '#0F172A' }}>Financial year starts in</Typography>
+                                    <Typography sx={{ fontSize: 12, color: '#6B7280', mt: 0.2 }}>The end month follows automatically — twelve months later. This can only be set once, so choose carefully.</Typography>
+                                </Box>
+                                <Chip
+                                    label={`${monthName(startMonth)} → ${monthName(endMonth)}  ·  ${previewYear(startMonth)}`}
+                                    sx={{ height: 34, borderRadius: '7px', fontSize: 12.5, fontWeight: 700, bgcolor: PRIMARY_LIGHT, color: PRIMARY, border: `1px solid ${PRIMARY_BORDER}` }}
+                                />
+                            </Stack>
 
-                    {/* Start month picker */}
-                    <Box sx={{ ...card, p: 0 }}>
-                        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 1.8, borderBottom: '1px solid #F1F3F7', flexWrap: 'wrap', gap: 1 }}>
-                            <Box>
-                                <Typography sx={{ fontSize: 14.5, fontWeight: 800, color: '#0F172A' }}>Financial year starts in</Typography>
-                                <Typography sx={{ fontSize: 12, color: '#6B7280', mt: 0.2 }}>The end month follows automatically — twelve months later.</Typography>
-                            </Box>
-                            <Chip
-                                label={`${monthName(startMonth)} → ${monthName(endMonth)}  ·  ${configured ? config.currentFinancialYear : previewYear(startMonth)}`}
-                                sx={{ height: 34, borderRadius: '7px', fontSize: 12.5, fontWeight: 700, bgcolor: PRIMARY_LIGHT, color: PRIMARY, border: `1px solid ${PRIMARY_BORDER}` }}
-                            />
-                        </Stack>
-
-                        <Grid container spacing={1.2} sx={{ p: 2 }}>
-                            {MONTHS.map((m) => {
-                                const on = Number(startMonth) === m.value;
-                                const isEnd = m.value === endMonth;
-                                return (
-                                    <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={m.value}>
-                                        <Tooltip arrow title={locked ? 'Locked — the start month can no longer be changed.' : ''}>
+                            <Grid container spacing={1.2} sx={{ p: 2 }}>
+                                {MONTHS.map((m) => {
+                                    const on = Number(startMonth) === m.value;
+                                    const isEnd = m.value === endMonth;
+                                    return (
+                                        <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={m.value}>
                                             <Box
-                                                onClick={locked ? undefined : () => setStartMonth(m.value)}
+                                                onClick={() => setStartMonth(m.value)}
                                                 sx={{
-                                                    px: 1.5, py: 1.4, borderRadius: '8px', textAlign: 'center', userSelect: 'none',
-                                                    cursor: locked ? 'not-allowed' : 'pointer',
+                                                    px: 1.5, py: 1.4, borderRadius: '8px', textAlign: 'center', userSelect: 'none', cursor: 'pointer',
                                                     border: '1px solid',
                                                     borderColor: on ? PRIMARY : (isEnd ? PRIMARY_BORDER : '#EEF1F6'),
                                                     bgcolor: on ? PRIMARY_LIGHT : '#F8FAFC',
-                                                    opacity: locked && !on ? 0.55 : 1,
                                                     transition: 'background-color .15s, border-color .15s',
-                                                    '&:hover': locked ? {} : { borderColor: on ? PRIMARY : '#D8DEE8' },
+                                                    '&:hover': { borderColor: on ? PRIMARY : '#D8DEE8' },
                                                 }}
                                             >
                                                 <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: on ? PRIMARY : '#334155' }}>{m.name}</Typography>
                                                 <Typography sx={{ fontSize: 10, fontWeight: 700, color: on ? PRIMARY : (isEnd ? '#94A3B8' : '#C4C9D4'), textTransform: 'uppercase', letterSpacing: 0.4, mt: 0.2 }}>
-                                                    {on ? 'Starts' : (isEnd ? 'Ends' : ' ')}
+                                                    {on ? 'Starts' : (isEnd ? 'Ends' : ' ')}
                                                 </Typography>
                                             </Box>
-                                        </Tooltip>
-                                    </Grid>
-                                );
-                            })}
-                        </Grid>
+                                        </Grid>
+                                    );
+                                })}
+                            </Grid>
 
-                        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 2, borderTop: '1px solid #F1F3F7', bgcolor: '#FBFAFE', flexWrap: 'wrap', gap: 1.5 }}>
-                            <Typography sx={{ fontSize: 12.5, color: '#64748B' }}>
-                                {locked
-                                    ? 'Locked — no changes can be saved.'
-                                    : dirty
-                                        ? <>Payroll periods will run <strong>{monthName(startMonth)}</strong> to <strong>{monthName(endMonth)}</strong>.</>
-                                        : 'This is already your financial year.'}
-                            </Typography>
-                            <Button
-                                onClick={save}
-                                disabled={locked || saving || !dirty}
-                                startIcon={saving ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <SaveRoundedIcon sx={{ fontSize: 17 }} />}
-                                sx={{ ...solidBtn, height: 42, px: 2.4, fontSize: 12.5 }}
-                            >
-                                {saving ? 'Saving…' : (configured ? 'Update Financial Year' : 'Set Financial Year')}
-                            </Button>
-                        </Stack>
-                    </Box>
+                            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 2, borderTop: '1px solid #F1F3F7', bgcolor: '#FBFAFE', flexWrap: 'wrap', gap: 1.5 }}>
+                                <Typography sx={{ fontSize: 12.5, color: '#64748B' }}>
+                                    Payroll periods will run <strong>{monthName(startMonth)}</strong> to <strong>{monthName(endMonth)}</strong>.
+                                </Typography>
+                                <Button
+                                    onClick={save}
+                                    disabled={saving}
+                                    startIcon={saving ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <SaveRoundedIcon sx={{ fontSize: 17 }} />}
+                                    sx={{ ...solidBtn, height: 42, px: 2.4, fontSize: 12.5 }}
+                                >
+                                    {saving ? 'Saving…' : 'Set Financial Year'}
+                                </Button>
+                            </Stack>
+                        </Box>
+                    )}
                 </Stack>
             )}
 
